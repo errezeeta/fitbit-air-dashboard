@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+import logging
+from datetime import date, datetime, timedelta
 from typing import Protocol
-from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -12,6 +12,8 @@ from backend.app.data_mapper import (
     map_sleep_session,
     map_steps_rollup,
 )
+
+logger = logging.getLogger(__name__)
 
 
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
@@ -61,9 +63,7 @@ class GoogleHealthClient:
         heart_rate_response = self._daily_resting_heart_rate(
             access_token, start_day, end_day
         )
-        sleep_response = self._sleep_sessions(
-            access_token, start_day, end_day, zone
-        )
+        sleep_response = self._sleep_sessions(access_token, start_day, end_day)
         return _map_dashboard(
             sleep_response=sleep_response,
             steps_response=steps_response,
@@ -88,7 +88,15 @@ class GoogleHealthClient:
             )
             response.raise_for_status()
             result = response.json()
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "google access-token refresh rejected: %s %s",
+                exc.response.status_code,
+                _error_detail(exc.response),
+            )
+            raise RuntimeError("Google Health access-token refresh failed") from exc
         except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("google access-token refresh failed: %s", type(exc).__name__)
             raise RuntimeError("Google Health access-token refresh failed") from exc
         access_token = result.get("access_token")
         if not isinstance(access_token, str) or not access_token:
@@ -145,18 +153,15 @@ class GoogleHealthClient:
         return response
 
     def _sleep_sessions(
-        self,
-        access_token: str,
-        start_day: date,
-        end_day: date,
-        zone: ZoneInfo,
+        self, access_token: str, start_day: date, end_day: date
     ) -> dict:
         url = f"{GOOGLE_HEALTH_BASE_URL}/users/me/dataTypes/sleep/dataPoints:reconcile"
-        start_utc = _utc_midnight(start_day, zone)
-        end_utc = _utc_midnight(end_day, zone)
+        # Sleep rejects every filter except its end-time fields. Filtering on
+        # sleep.interval.start_time returns INVALID_ARGUMENT, which surfaces to
+        # the app as a generic data-loading failure.
         query_filter = (
-            f'sleep.interval.start_time >= "{start_utc}" AND '
-            f'sleep.interval.start_time < "{end_utc}"'
+            f'sleep.interval.civil_end_time >= "{start_day.isoformat()}" AND '
+            f'sleep.interval.civil_end_time < "{end_day.isoformat()}"'
         )
         points = []
         page_token = None
@@ -198,7 +203,19 @@ class GoogleHealthClient:
             if not isinstance(payload, dict):
                 raise ValueError("invalid Google Health response")
             return payload
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "google health %s %s rejected: %s %s",
+                method,
+                url,
+                exc.response.status_code,
+                _error_detail(exc.response),
+            )
+            raise RuntimeError("Google Health data request failed") from exc
         except (httpx.HTTPError, ValueError) as exc:
+            logger.warning(
+                "google health %s %s failed: %s", method, url, type(exc).__name__
+            )
             raise RuntimeError("Google Health data request failed") from exc
 
 
@@ -281,8 +298,17 @@ def _date_object(value: date) -> dict[str, int]:
     return {"year": value.year, "month": value.month, "day": value.day}
 
 
-def _utc_midnight(day: date, zone: ZoneInfo) -> str:
-    local_midnight = datetime.combine(day, time.min, tzinfo=zone)
-    return local_midnight.astimezone(timezone.utc).isoformat(timespec="seconds").replace(
-        "+00:00", "Z"
-    )
+def _error_detail(response: httpx.Response) -> str:
+    """Google's own error text, for logs. Never contains tokens."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return response.text[:300]
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            fields = (error.get("code"), error.get("status"), error.get("message"))
+            return " ".join(str(field) for field in fields if field)[:300]
+        if error is not None:
+            return str(error)[:300]
+    return str(payload)[:300]

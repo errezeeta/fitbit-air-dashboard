@@ -105,8 +105,48 @@ class GoogleHealthClientTest(unittest.TestCase):
 
         sleep_request = next(r for r in requests if r.url.path.endswith("/sleep/dataPoints:reconcile"))
         sleep_filter = sleep_request.url.params["filter"]
-        self.assertIn('sleep.interval.start_time >= "2026-10-08T00:00:00Z"', sleep_filter)
-        self.assertIn('sleep.interval.start_time < "2026-10-15T00:00:00Z"', sleep_filter)
+        # Sleep supports only end-time filters; a start-time filter is rejected
+        # with INVALID_ARGUMENT. See the filter catalogue in the Health API docs.
+        self.assertIn('sleep.interval.civil_end_time >= "2026-10-08"', sleep_filter)
+        self.assertIn('sleep.interval.civil_end_time < "2026-10-15"', sleep_filter)
+        self.assertNotIn("start_time", sleep_filter)
+    def test_logs_googles_own_error_text_without_leaking_the_refresh_token(self):
+        def handler(request):
+            if request.url.host == "oauth2.googleapis.com":
+                return httpx.Response(200, json={"access_token": "access-token-value"})
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "code": 400,
+                        "status": "INVALID_ARGUMENT",
+                        "message": "Invalid filter: sleep.interval.start_time",
+                    }
+                },
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        health = GoogleHealthClient(
+            client_id="web-client-id",
+            client_secret="web-client-secret",
+            http_client=client,
+        )
+
+        with self.assertLogs("backend.app.google_health", level="WARNING") as captured:
+            with self.assertRaises(RuntimeError):
+                health.load_dashboard(
+                    refresh_token="refresh-secret-value",
+                    timezone_name="UTC",
+                    days=7,
+                    now=datetime(2026, 10, 14, 10, 0, tzinfo=timezone.utc),
+                )
+
+        logged = " ".join(captured.output)
+        self.assertIn("Invalid filter: sleep.interval.start_time", logged)
+        self.assertIn("400", logged)
+        self.assertNotIn("refresh-secret-value", logged)
+        self.assertNotIn("access-token-value", logged)
+        self.assertNotIn("web-client-secret", logged)
 
 
 if __name__ == "__main__":
