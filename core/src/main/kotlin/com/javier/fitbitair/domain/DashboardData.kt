@@ -31,6 +31,11 @@ data class DailyRestingHeartRate(
     val beatsPerMinute: Int,
 )
 
+data class DailyDistance(
+    val label: String,
+    val meters: Int,
+)
+
 data class DashboardData(
     val sleep: SleepSummary,
     val stepsToday: Int,
@@ -39,6 +44,8 @@ data class DashboardData(
     val stepsTrend: List<DailySteps>,
     val sleepTrend: List<SleepSummary>,
     val heartRateTrend: List<DailyRestingHeartRate>,
+    val distanceTodayMeters: Int = 0,
+    val distanceTrend: List<DailyDistance> = emptyList(),
 )
 
 enum class TrendRange(val label: String, val days: Int) {

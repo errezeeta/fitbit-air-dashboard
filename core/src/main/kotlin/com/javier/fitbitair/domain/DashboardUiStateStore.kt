@@ -19,7 +19,16 @@ data class DashboardUiState(
 class DashboardUiStateStore {
     var state: DashboardUiState = DashboardUiState()
         private set
+
+    /**
+     * The last successful load for the current range. Keeping it lets the app
+     * re-render instantly while a refresh runs in the background, instead of
+     * blanking into the loading skeleton every time the screen is opened.
+     */
+    private val lastGoodByRange = mutableMapOf<TrendRange, DashboardState.Ready>()
     private var settingsReturnDestination = DashboardDestination.HOME
+
+    fun cachedDashboard(range: TrendRange): DashboardState.Ready? = lastGoodByRange[range]
 
     fun select(destination: DashboardDestination) {
         if (destination != DashboardDestination.SETTINGS) {
@@ -28,12 +37,30 @@ class DashboardUiStateStore {
     }
 
     fun updateDashboard(dashboard: DashboardState) {
+        if (dashboard is DashboardState.Ready) {
+            lastGoodByRange[state.range] = dashboard
+        }
         state = state.copy(dashboard = dashboard)
+    }
+
+    /**
+     * Refreshing keeps the previous data on screen and only swaps in the loading
+     * state when there is nothing to show yet.
+     */
+    fun beginRefresh() {
+        val replacement = cachedDashboard(state.range) ?: DashboardState.Loading
+        if (state.dashboard !is DashboardState.Ready) {
+            state = state.copy(dashboard = replacement)
+        }
     }
 
     fun changeRange(range: TrendRange) {
         if (state.range != range) {
-            state = state.copy(range = range, dashboard = DashboardState.Loading)
+            val cached = cachedDashboard(range)
+            state = state.copy(
+                range = range,
+                dashboard = cached ?: DashboardState.Loading,
+            )
         }
     }
 

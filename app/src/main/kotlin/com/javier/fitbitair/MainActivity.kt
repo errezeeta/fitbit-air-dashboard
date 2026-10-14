@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.javier.fitbitair.data.AppUpdater
 import com.javier.fitbitair.data.BackendHealthRepository
 import com.javier.fitbitair.data.SampleHealthRepository
 import com.javier.fitbitair.data.SessionTokenStore
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private val dataRevision = MutableStateFlow(0)
 
     private lateinit var sessionStore: SessionTokenStore
+    private lateinit var updater: AppUpdater
     private var backendClient: BackendApiClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,6 +50,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         sessionStore = SessionTokenStore(applicationContext)
+        updater = AppUpdater(applicationContext)
         googleConnected.value = sessionStore.hasSession()
         val baseUrl = BuildConfig.BACKEND_BASE_URL.trim()
         if (baseUrl.isNotBlank()) {
@@ -76,6 +79,7 @@ class MainActivity : ComponentActivity() {
                     assistantConfigured = services.assistantConfigured,
                     connectionMessage = notice,
                     dataRevision = revision,
+                    updater = updater,
                     onConnectGoogleHealth = ::beginGoogleAuthorization,
                     onAskAssistant = { question, range ->
                         withContext(Dispatchers.IO) {

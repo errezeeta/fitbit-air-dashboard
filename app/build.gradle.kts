@@ -5,6 +5,8 @@ plugins {
 
 val backendBaseUrl = providers.gradleProperty("backendBaseUrl").orElse("").get()
 val escapedBackendBaseUrl = backendBaseUrl.replace("\\", "\\\\").replace("\"", "\\\"")
+val repoOwner = "errezeeta"
+val repoName = "fitbit-air-dashboard"
 
 android {
     namespace = "com.javier.fitbitair"
@@ -15,9 +17,12 @@ android {
         applicationId = "com.javier.fitbitair"
         minSdk = 31
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
         buildConfigField("String", "BACKEND_BASE_URL", "\"$escapedBackendBaseUrl\"")
+        buildConfigField("String", "UPDATE_REPO", "\"https://api.github.com/repos/$repoOwner/$repoName/releases/latest\"")
+        buildConfigField("int", "APP_VERSION_CODE", "$versionCode")
+        buildConfigField("String", "APP_VERSION_NAME", "\"$versionName\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

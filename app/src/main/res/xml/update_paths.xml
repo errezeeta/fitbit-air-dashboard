@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Keeps the downloaded APK accessible only to the installer intent. -->
+    <external-files-path
+        name="updates"
+        path="updates/" />
+    <files-path
+        name="updates-fallback"
+        path="updates/" />
+</paths>

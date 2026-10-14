@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material3.AlertDialog
@@ -59,6 +60,7 @@ import com.javier.fitbitair.domain.TrendRange
 import com.javier.fitbitair.domain.sleepEfficiencyPercent
 import com.javier.fitbitair.domain.stepProgress
 import com.javier.fitbitair.domain.trendDelta
+import com.javier.fitbitair.ui.components.DistanceBarChart
 import com.javier.fitbitair.ui.components.HeartRateSparkline
 import com.javier.fitbitair.ui.components.SleepStageBar
 import com.javier.fitbitair.ui.components.SleepStageLegend
@@ -103,6 +105,8 @@ fun HomeScreen(
                 onClick = {},
             )
         }
+
+        DistanceCard(meters = data.distanceTodayMeters, modifier = Modifier.fillMaxWidth())
 
         TrendPanel(
             title = if (range == TrendRange.WEEK) "Pasos esta semana" else "Pasos últimos 30 días",
@@ -167,10 +171,16 @@ fun ActivityScreen(
             .padding(horizontal = 18.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        ScreenHeading("MOVIMIENTO", "Actividad", "Pasos y pulso en reposo")
+        ScreenHeading("MOVIMIENTO", "Actividad", "Pasos, distancia y pulso en reposo")
         StepsGoalCard(data.stepsToday, stepGoal, onEdit = { showGoalDialog = true })
+        DistanceCard(meters = data.distanceTodayMeters, modifier = Modifier.fillMaxWidth())
         TrendPanel("Pasos por día", range, onRangeChange) {
             StepsBarChart(data.stepsTrend)
+        }
+        if (data.distanceTrend.isNotEmpty()) {
+            TrendPanel("Distancia por día", range, onRangeChange = {}) {
+                DistanceBarChart(data.distanceTrend)
+            }
         }
         RestingHeartDetail(data)
         Text(
@@ -215,9 +225,49 @@ private fun SleepHeroCard(sleep: SleepSummary, onOpen: () -> Unit) {
                 Text("${sleep.asleepMinutes % 60}", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
                 Text(" min", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
             }
-            Text("${sleep.bedtime} — ${sleep.wakeTime} · datos de muestra", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+            Text("${sleep.bedtime} — ${sleep.wakeTime} · hora local", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
             SleepStageBar(sleep.stages, Modifier.fillMaxWidth())
             SleepStageLegend(sleep.stages)
+        }
+    }
+}
+
+@Composable
+private fun DistanceCard(meters: Int, modifier: Modifier = Modifier) {
+    if (meters <= 0) return
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.86f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(
+                Icons.Rounded.Route,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Distancia de hoy", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f))
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        formatDistance(meters),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    Text(
+                        "recorridos",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+            }
         }
     }
 }
@@ -229,7 +279,7 @@ private fun StepsMetricCard(steps: Int, goal: Int, modifier: Modifier, onEditGoa
             Icon(Icons.AutoMirrored.Rounded.DirectionsWalk, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text("Pasos", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(steps.toString().reversed().chunked(3).joinToString(" ").reversed(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip)
-            Text("de ${goal.toString()} · muestra", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("de ${goal.toString()} · meta diaria", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             androidx.compose.material3.LinearProgressIndicator(
                 progress = { stepProgress(steps, goal) },
                 modifier = Modifier.fillMaxWidth().height(7.dp).clip(CircleShape),
@@ -413,6 +463,14 @@ private fun InfoNote(text: String) {
 private fun formatDuration(minutes: Int): String {
     if (minutes <= 0) return "—"
     return "${minutes / 60} h ${minutes % 60} min"
+}
+
+/** Meters are read better in metres when short, kilometres when long. */
+private fun formatDistance(meters: Int): String {
+    if (meters < 1_000) return "$meters m"
+    val kilometres = meters / 1_000f
+    val shortened = (kilometres * 100).toInt() / 100f
+    return "${shortened.toString().replace('.', ',')} km"
 }
 
 private fun chartLabel(index: Int, range: TrendRange, count: Int): String = if (range == TrendRange.WEEK) {

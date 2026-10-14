@@ -85,6 +85,7 @@ fun FitbitAirApp(
     assistantConfigured: Boolean = false,
     connectionMessage: String? = null,
     dataRevision: Int = 0,
+    updater: com.javier.fitbitair.data.AppUpdater? = null,
     onConnectGoogleHealth: () -> Unit = {},
     onAskAssistant: suspend (String, TrendRange) -> String = { _, _ -> "El asistente todavía no está disponible." },
 ) {
@@ -115,7 +116,9 @@ fun FitbitAirApp(
     }
 
     LaunchedEffect(uiState.range, reloadToken, dataRevision, googleConnected) {
-        stateStore.updateDashboard(DashboardState.Loading)
+        // Keep whatever the last good load painted and refresh behind it; a
+        // blank skeleton only shows on a first run with nothing cached.
+        stateStore.beginRefresh()
         uiState = stateStore.state
         val loaded = try {
             repository.loadDashboard(uiState.range)
@@ -169,13 +172,18 @@ fun FitbitAirApp(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
+                    // Translucent bar over a gradient backdrop gives the
+                    // Material You "frosted glass" feel; edge-to-edge is on.
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
                 ),
             )
         },
         bottomBar = {
             if (uiState.destination != DashboardDestination.SETTINGS) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f),
+                    tonalElevation = 4.dp,
+                ) {
                     AppTab.entries.forEach { tab ->
                         NavigationBarItem(
                             selected = uiState.destination == tab.destination,
@@ -214,6 +222,7 @@ fun FitbitAirApp(
                         assistantConfigured = assistantConfigured,
                         connectionMessage = connectionMessage,
                         onConnectGoogleHealth = onConnectGoogleHealth,
+                        updater = updater,
                     )
                     DashboardDestination.HOME -> DashboardContent(uiState.dashboard) { data ->
                         HomeScreen(

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -16,10 +17,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,10 +31,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.javier.fitbitair.data.AppUpdater
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -47,6 +54,8 @@ fun SettingsScreen(
     assistantConfigured: Boolean,
     connectionMessage: String?,
     onConnectGoogleHealth: () -> Unit,
+    updater: com.javier.fitbitair.data.AppUpdater? = null,
+    appVersionName: String = com.javier.fitbitair.BuildConfig.APP_VERSION_NAME,
 ) {
     var editGoal by remember { mutableStateOf(false) }
     Column(
@@ -107,6 +116,8 @@ fun SettingsScreen(
                 TextButton(onClick = { editGoal = true }) { Text("Cambiar meta") }
             }
         }
+
+        SoftwareUpdateCard(updater, appVersionName)
 
         Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -175,5 +186,89 @@ private fun SettingsGoalDialog(current: Int, onDismiss: () -> Unit, onSave: (Int
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }
+
+private sealed interface UpdateUiState {
+    data object Idle : UpdateUiState
+    data object Checking : UpdateUiState
+    data object UpToDate : UpdateUiState
+    data object Downloading : UpdateUiState
+    data class Available(val update: AppUpdater.AvailableUpdate) : UpdateUiState
+    data class ReadyToInstall(val prep: AppUpdater.InstallPreparation) : UpdateUiState
+}
+
+/**
+ * Looks for a newer GitHub release and lets the user download and install it
+ * from inside the app. Android's package installer shows the one-time
+ * "install unknown apps" prompt itself; no extra permission is requested here.
+ */
+@Composable
+private fun SoftwareUpdateCard(updater: AppUpdater?, appVersionName: String) {
+    var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        if (updater == null) return@LaunchedEffect
+        state = UpdateUiState.Checking
+        val update = runCatching { updater.checkForUpdate() }.getOrNull()
+        state = update?.let(UpdateUiState::Available) ?: UpdateUiState.UpToDate
+    }
+
+    ElevatedCard(shape = RoundedCornerShape(26.dp)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(
+                    Icons.Rounded.SystemUpdateAlt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column {
+                    Text("Actualización de la app", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Versión $appVersionName · instalada en el dispositivo",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            when (val snapshot = state) {
+                UpdateUiState.Idle, UpdateUiState.Checking -> Text(
+                    "Buscando actualizaciones…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                UpdateUiState.UpToDate -> Text(
+                    "Estás en la última versión publicada.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                UpdateUiState.Downloading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text("Descargando actualización…", style = MaterialTheme.typography.bodySmall)
+                }
+                is UpdateUiState.Available -> TextButton(onClick = {
+                    val updaterInstance = updater ?: return@TextButton
+                    state = UpdateUiState.Downloading
+                    coroutineScope.launch {
+                        try {
+                            val prep = updaterInstance.download(snapshot.update)
+                            state = UpdateUiState.ReadyToInstall(prep)
+                        } catch (_: Exception) {
+                            state = UpdateUiState.Available(snapshot.update)
+                        }
+                    }
+                }) { Text("Instalar ${snapshot.update.versionName}") }
+                is UpdateUiState.ReadyToInstall -> Button(onClick = {
+                    val updaterInstance = updater ?: return@Button
+                    updaterInstance.startInstall(snapshot.prep)
+                }) { Text("Abrir instalador") }
+            }
+        }
+    }
+}
+
 
 private fun formatGoal(value: Int): String = value.toString().reversed().chunked(3).joinToString(" ").reversed()

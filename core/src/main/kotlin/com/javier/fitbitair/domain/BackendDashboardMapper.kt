@@ -23,25 +23,11 @@ object BackendDashboardMapper {
         }
     }
 
-    fun dayLabel(date: LocalDate, range: TrendRange, index: Int, count: Int): String {
-        if (range == TrendRange.WEEK) {
-            return when (date.dayOfWeek) {
-                DayOfWeek.MONDAY -> "L"
-                DayOfWeek.TUESDAY -> "M"
-                DayOfWeek.WEDNESDAY -> "X"
-                DayOfWeek.THURSDAY -> "J"
-                DayOfWeek.FRIDAY -> "V"
-                DayOfWeek.SATURDAY -> "S"
-                DayOfWeek.SUNDAY -> "D"
-            }
-        }
-        return if (index % 5 == 0 || index == count - 1) date.dayOfMonth.toString() else ""
-    }
-
     private fun mapReadyDashboard(root: JsonObject, range: TrendRange): DashboardData {
         val stepsElements = root.arrayValue("stepsTrend")
         val sleepElements = root.arrayValue("sleepTrend")
         val heartRateElements = root.arrayValue("heartRateTrend")
+        val distanceElements = root.arrayValue("distanceTrend")
         return DashboardData(
             sleep = root.objectValue("sleep")?.let(::mapSleep) ?: EMPTY_SLEEP,
             stepsToday = root.intValue("stepsToday"),
@@ -51,7 +37,7 @@ object BackendDashboardMapper {
                 val point = element.objectOrNull() ?: return@mapIndexedNotNull null
                 val date = point.stringValue("date").toLocalDateOrNull() ?: return@mapIndexedNotNull null
                 DailySteps(
-                    label = dayLabel(date, range, index, stepsElements.size),
+                    label = chartAxisLabel(date, range, index, stepsElements.size),
                     steps = point.intValue("steps"),
                 )
             },
@@ -62,8 +48,17 @@ object BackendDashboardMapper {
                 val point = element.objectOrNull() ?: return@mapIndexedNotNull null
                 val date = point.stringValue("date").toLocalDateOrNull() ?: return@mapIndexedNotNull null
                 DailyRestingHeartRate(
-                    label = dayLabel(date, range, index, heartRateElements.size),
+                    label = chartAxisLabel(date, range, index, heartRateElements.size),
                     beatsPerMinute = point.intValue("beatsPerMinute"),
+                )
+            },
+            distanceTodayMeters = root.intValue("distanceTodayMeters"),
+            distanceTrend = distanceElements.mapIndexedNotNull { index, element ->
+                val point = element.objectOrNull() ?: return@mapIndexedNotNull null
+                val date = point.stringValue("date").toLocalDateOrNull() ?: return@mapIndexedNotNull null
+                DailyDistance(
+                    label = chartAxisLabel(date, range, index, distanceElements.size),
+                    meters = point.intValue("meters"),
                 )
             },
         )
@@ -123,4 +118,31 @@ object BackendDashboardMapper {
     )
 
     private const val SAFE_ERROR = "La respuesta del servidor no es válida."
+}
+
+/**
+ * One dense, readable axis tick per bar. Months alternate short numeric ticks
+ * with wide blanks so the numbers never crowd or wrap, which is what broke the
+ * previous per-bar layout.
+ */
+fun chartAxisLabel(date: LocalDate, range: TrendRange, index: Int, count: Int): String {
+    if (range == TrendRange.WEEK) {
+        return when (date.dayOfWeek) {
+            DayOfWeek.MONDAY -> "L"
+            DayOfWeek.TUESDAY -> "M"
+            DayOfWeek.WEDNESDAY -> "X"
+            DayOfWeek.THURSDAY -> "J"
+            DayOfWeek.FRIDAY -> "V"
+            DayOfWeek.SATURDAY -> "S"
+            DayOfWeek.SUNDAY -> "D"
+        }
+    }
+    val step = when {
+        count <= 10 -> 2
+        count <= 16 -> 3
+        else -> 5
+    }
+    val isFirst = index == 0
+    val isLast = index == count - 1
+    return if (isFirst || isLast || index % step == 0) date.dayOfMonth.toString() else ""
 }
