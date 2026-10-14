@@ -74,18 +74,19 @@ class GoogleHealthClient:
                     self._daily_resting_heart_rate, access_token, start_day, end_day
                 ),
                 "sleep": pool.submit(self._sleep_sessions, access_token, start_day, end_day),
-                "distance": pool.submit(
-                    self._steps_rollup,
-                    access_token,
-                    start_day,
-                    end_day,
-                    data_type="distance",
-                ),
+                "distance": pool.submit(self._steps_rollup, access_token, start_day, end_day, days, data_type="distance"),
             }
             steps_response = pending["steps"].result()
             heart_rate_response = pending["heart_rate"].result()
             sleep_response = pending["sleep"].result()
-            distance_response = pending["distance"].result()
+            # Distance is the newest query and the app must never lose the
+            # whole dashboard because of it: degrade to an empty trend and
+            # keep the reason in the logs.
+            try:
+                distance_response = pending["distance"].result()
+            except RuntimeError as exc:
+                logger.warning("distance rollup degraded to empty: %s", exc)
+                distance_response = {}
         return _map_dashboard(
             sleep_response=sleep_response,
             steps_response=steps_response,
