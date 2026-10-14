@@ -1,6 +1,35 @@
 import unittest
 
-from backend.app.data_mapper import map_sleep_session
+from backend.app.data_mapper import map_distance_rollup, map_sleep_session
+
+
+class DistanceMapperTest(unittest.TestCase):
+    def test_map_distance_rollup_converts_millimeters_to_meters_per_day(self):
+        response = {
+            "rollupDataPoints": [
+                {
+                    "civilStartTime": {"date": {"year": 2026, "month": 10, "day": 13}},
+                    "distance": {"millimetersSum": "3875000"},
+                },
+                {
+                    "civilStartTime": {"date": {"year": 2026, "month": 10, "day": 14}},
+                    "distance": {"millimetersSum": "4123000"},
+                },
+                # A day without a distance value is skipped so the chart does
+                # not paint zero bars that were never recorded.
+                {"civilStartTime": {"date": {"year": 2026, "month": 10, "day": 15}}},
+            ],
+        }
+
+        mapped = map_distance_rollup(response)
+
+        self.assertEqual(
+            [
+                {"date": "2026-10-13", "meters": 3875},
+                {"date": "2026-10-14", "meters": 4123},
+            ],
+            mapped,
+        )
 
 
 class SleepMapperTest(unittest.TestCase):

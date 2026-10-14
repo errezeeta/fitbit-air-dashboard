@@ -17,6 +17,18 @@ class GoogleHealthClientTest(unittest.TestCase):
             requests.append(request)
             if request.url.host == "oauth2.googleapis.com":
                 return httpx.Response(200, json={"access_token": "short-lived-access-token"})
+            if request.url.path.endswith("/distance/dataPoints:dailyRollUp"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "rollupDataPoints": [
+                            {
+                                "civilStartTime": {"date": {"year": 2026, "month": 10, "day": 14}},
+                                "distance": {"millimetersSum": "4123000"},
+                            }
+                        ]
+                    },
+                )
             if request.url.path.endswith("/steps/dataPoints:dailyRollUp"):
                 return httpx.Response(
                     200,
@@ -89,6 +101,8 @@ class GoogleHealthClientTest(unittest.TestCase):
         self.assertEqual(59, dashboard["previousRestingHeartRate"])
         self.assertEqual(450, dashboard["sleep"]["asleepMinutes"])
         self.assertEqual(480, dashboard["sleep"]["inBedMinutes"])
+        self.assertAlmostEqual(4123, dashboard["distanceTodayMeters"])
+        self.assertEqual(1, len(dashboard["distanceTrend"]))
         self.assertEqual(7, len(dashboard["stepsTrend"]))
         self.assertEqual(7, len(dashboard["sleepTrend"]))
         self.assertNotIn("google-refresh-token", str(dashboard))
@@ -99,6 +113,8 @@ class GoogleHealthClientTest(unittest.TestCase):
         self.assertEqual({"year": 2026, "month": 10, "day": 8}, steps_body["range"]["start"]["date"])
         self.assertEqual({"year": 2026, "month": 10, "day": 15}, steps_body["range"]["end"]["date"])
         self.assertEqual("users/me/dataSourceFamilies/google-wearables", steps_body["dataSourceFamily"])
+        distance_request = next(r for r in requests if "/distance/dataPoints:dailyRollUp" in str(r.url))
+        self.assertEqual({"year": 2026, "month": 10, "day": 8}, json.loads(distance_request.content)["range"]["start"]["date"])
         for request in requests:
             if request.url.host == "health.googleapis.com":
                 self.assertEqual("Bearer short-lived-access-token", request.headers["Authorization"])

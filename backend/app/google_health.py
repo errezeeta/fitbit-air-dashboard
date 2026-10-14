@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 from datetime import date, datetime, timedelta
 from typing import Protocol
@@ -8,6 +9,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from backend.app.data_mapper import (
+    map_distance_rollup,
     map_resting_heart_rate,
     map_sleep_session,
     map_steps_rollup,
@@ -20,6 +22,7 @@ GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_HEALTH_BASE_URL = "https://health.googleapis.com/v4"
 GOOGLE_WEARABLES = "users/me/dataSourceFamilies/google-wearables"
 MAX_SLEEP_PAGES = 5
+_GOOGLE_REQUEST_WORKERS = 4
 
 
 class RotatingRefreshTokenStore(Protocol):
@@ -59,14 +62,34 @@ class GoogleHealthClient:
         end_day = today + timedelta(days=1)
 
         access_token = self._refresh_access_token(refresh_token)
-        steps_response = self._steps_rollup(access_token, start_day, end_day, days)
-        heart_rate_response = self._daily_resting_heart_rate(
-            access_token, start_day, end_day
-        )
-        sleep_response = self._sleep_sessions(access_token, start_day, end_day)
+        # The dashboard needs four Google round trips; run them concurrently so
+        # a cold Cloud Run request stays inside one network latency instead of
+        # four. httpx.Client is safe to share across threads.
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=_GOOGLE_REQUEST_WORKERS
+        ) as pool:
+            pending = {
+                "steps": pool.submit(self._steps_rollup, access_token, start_day, end_day, days),
+                "heart_rate": pool.submit(
+                    self._daily_resting_heart_rate, access_token, start_day, end_day
+                ),
+                "sleep": pool.submit(self._sleep_sessions, access_token, start_day, end_day),
+                "distance": pool.submit(
+                    self._steps_rollup,
+                    access_token,
+                    start_day,
+                    end_day,
+                    data_type="distance",
+                ),
+            }
+            steps_response = pending["steps"].result()
+            heart_rate_response = pending["heart_rate"].result()
+            sleep_response = pending["sleep"].result()
+            distance_response = pending["distance"].result()
         return _map_dashboard(
             sleep_response=sleep_response,
             steps_response=steps_response,
+            distance_response=distance_response,
             heart_rate_response=heart_rate_response,
             timezone_name=timezone_name,
             today=today,
@@ -107,16 +130,27 @@ class GoogleHealthClient:
         return access_token
 
     def _steps_rollup(
-        self, access_token: str, start_day: date, end_day: date, days: int
+        self,
+        access_token: str,
+        start_day: date,
+        end_day: date,
+        days: int = 0,
+        *,
+        data_type: str = "steps",
     ) -> dict:
-        url = f"{GOOGLE_HEALTH_BASE_URL}/users/me/dataTypes/steps/dataPoints:dailyRollUp"
+        url = (
+            f"{GOOGLE_HEALTH_BASE_URL}/users/me/dataTypes/"
+            f"{data_type}/dataPoints:dailyRollUp"
+        )
         base_body = {
             "range": {
                 "start": {"date": _date_object(start_day)},
                 "end": {"date": _date_object(end_day)},
             },
             "windowSizeDays": 1,
-            "pageSize": days,
+            # Distance is not capped at 14 days, but Google rejects pages above
+            # the data-type maximum, so never ask for more than 31 windows.
+            "pageSize": max(min(days, 31), 1),
             "dataSourceFamily": GOOGLE_WEARABLES,
         }
         points = []
@@ -225,6 +259,7 @@ def _map_dashboard(
     *,
     sleep_response: dict,
     steps_response: dict,
+    distance_response: dict | None = None,
     heart_rate_response: dict,
     timezone_name: str,
     today: date,
@@ -238,6 +273,17 @@ def _map_dashboard(
         {"date": (start_day + timedelta(days=index)).isoformat(),
          "steps": steps_by_day.get((start_day + timedelta(days=index)).isoformat(), 0)}
         for index in range(days)
+    ]
+
+    distance_points = map_distance_rollup(distance_response) if distance_response else []
+    distance_by_day = {point["date"]: point["meters"] for point in distance_points}
+    distance_trend = [
+        {"date": (start_day + timedelta(days=index)).isoformat(),
+         "meters": distance_by_day.get((start_day + timedelta(days=index)).isoformat(), 0)}
+        for index in range(days)
+        # Ask only for days that actually have a distance rollup, so the app
+        # does not bar-chart empty days as if they were zero-distance days.
+        if distance_by_day.get((start_day + timedelta(days=index)).isoformat(), 0) > 0
     ]
 
     heart_rate = map_resting_heart_rate(heart_rate_response)
@@ -293,6 +339,8 @@ def _map_dashboard(
         "stepsTrend": steps_trend,
         "sleepTrend": sleep_trend,
         "heartRateTrend": heart_rate,
+        "distanceTrend": distance_trend,
+        "distanceTodayMeters": distance_by_day.get(today.isoformat(), 0),
     }
 
 

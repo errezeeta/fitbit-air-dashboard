@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 _STAGE_ORDER = ("LIGHT", "DEEP", "REM", "RESTLESS", "AWAKE")
 _ASLEEP_STAGES = {"LIGHT", "DEEP", "REM"}
+_MILLIMETERS_PER_METER = 1000.0
 
 
 def map_sleep_session(session: dict, timezone_name: str = "UTC") -> dict:
@@ -41,16 +42,41 @@ def map_sleep_session(session: dict, timezone_name: str = "UTC") -> dict:
 
 
 def map_steps_rollup(response: dict) -> list[dict]:
-    """Convert Google Health daily rollups to ISO-dated step values."""
+    """Convert Google Health daily step rollups to ISO-dated steps."""
+    return _count_rollup(response, value_field="steps", count_field="countSum")
+
+
+def map_distance_rollup(response: dict) -> list[dict]:
+    """Convert Google Health daily distance rollups to ISO-dated meters.
+
+    DistanceRollupValue reports millimetersSum; each day is rounded to whole
+    meters to keep the payload small.
+    """
     mapped = []
     for point in response.get("rollupDataPoints") or []:
         civil_start = point.get("civilStartTime") or {}
         iso_date = _date_string(civil_start.get("date"))
-        steps_value = (point.get("steps") or {}).get("countSum")
-        if iso_date is None or steps_value is None:
+        millimeters = _optional_int((point.get("distance") or {}).get("millimetersSum"))
+        if iso_date is None or millimeters is None:
             continue
-        mapped.append({"date": iso_date, "steps": int(steps_value)})
-    return sorted(mapped, key=lambda item: item["date"])
+        mapped.append(
+            {"date": iso_date, "meters": round(millimeters / _MILLIMETERS_PER_METER)}
+        )
+    mapped.sort(key=lambda item: item["date"])
+    return mapped
+
+
+def _count_rollup(response: dict, *, value_field: str, count_field: str) -> list[dict]:
+    mapped = []
+    for point in response.get("rollupDataPoints") or []:
+        civil_start = point.get("civilStartTime") or {}
+        iso_date = _date_string(civil_start.get("date"))
+        count = _optional_int((point.get(value_field) or {}).get(count_field))
+        if iso_date is None or count is None:
+            continue
+        mapped.append({"date": iso_date, "steps": count})
+    mapped.sort(key=lambda item: item["date"])
+    return mapped
 
 
 def map_resting_heart_rate(response: dict) -> list[dict]:
