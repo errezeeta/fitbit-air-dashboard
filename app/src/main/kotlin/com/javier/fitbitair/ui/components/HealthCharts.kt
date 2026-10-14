@@ -78,17 +78,22 @@ private fun stageColor(kind: SleepStageKind) = when (kind) {
     SleepStageKind.LIGHT -> MaterialTheme.colorScheme.primary
     SleepStageKind.DEEP -> MaterialTheme.colorScheme.tertiary
     SleepStageKind.REM -> MaterialTheme.colorScheme.secondary
+    SleepStageKind.RESTLESS -> MaterialTheme.colorScheme.outline
     SleepStageKind.AWAKE -> MaterialTheme.colorScheme.outlineVariant
 }
 
 @Composable
 fun StepsBarChart(data: List<DailySteps>, modifier: Modifier = Modifier) {
     val maxSteps = data.maxOfOrNull { it.steps }?.coerceAtLeast(1) ?: 1
+    val dense = data.size >= 20
+    val gap = if (dense) 2.dp else 6.dp
+    val barWidth = if (dense) 6.dp else 14.dp
+    val latestBarWidth = if (dense) 8.dp else 18.dp
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(132.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(gap),
         verticalAlignment = Alignment.Bottom,
     ) {
         data.forEachIndexed { index, point ->
@@ -100,7 +105,7 @@ fun StepsBarChart(data: List<DailySteps>, modifier: Modifier = Modifier) {
             ) {
                 Box(
                     modifier = Modifier
-                        .width(if (index == data.lastIndex) 18.dp else 14.dp)
+                        .width(if (index == data.lastIndex) latestBarWidth else barWidth)
                         .height(88.dp * fraction)
                         .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 3.dp, bottomEnd = 3.dp))
                         .background(
@@ -109,7 +114,11 @@ fun StepsBarChart(data: List<DailySteps>, modifier: Modifier = Modifier) {
                         ),
                 )
                 Spacer(Modifier.height(7.dp))
-                Text(point.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (point.label.isNotEmpty()) {
+                    Text(point.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Spacer(Modifier.height(12.dp))
+                }
             }
         }
     }

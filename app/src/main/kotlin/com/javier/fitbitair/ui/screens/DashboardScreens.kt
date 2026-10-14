@@ -105,19 +105,13 @@ fun HomeScreen(
         }
 
         TrendPanel(
-            title = "Pasos esta semana",
+            title = if (range == TrendRange.WEEK) "Pasos esta semana" else "Pasos últimos 30 días",
             range = range,
             onRangeChange = onRangeChange,
         ) {
             StepsBarChart(data.stepsTrend)
         }
 
-        Text(
-            "Datos de muestra · no conectados a Google Health",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp),
-        )
     }
 
     if (showGoalDialog) {
@@ -150,7 +144,7 @@ fun SleepScreen(data: DashboardData, range: TrendRange, onRangeChange: (TrendRan
         }
         TrendPanel("Duración del sueño", range, onRangeChange) {
             StepsBarChart(data.sleepTrend.mapIndexed { index, item ->
-                DailySteps(chartLabel(index, range), item.asleepMinutes)
+                DailySteps(chartLabel(index, range, data.sleepTrend.size), item.asleepMinutes)
             })
         }
         InfoNote("*La eficiencia es un cálculo propio (tiempo dormido ÷ tiempo en cama). No es el Sleep Score de Fitbit.")
@@ -180,7 +174,7 @@ fun ActivityScreen(
         }
         RestingHeartDetail(data)
         Text(
-            "Valores de muestra; se consultarán al abrir cuando Google Health esté conectado.",
+            "Lecturas del periodo seleccionado",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp),
@@ -272,7 +266,7 @@ private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("PASOS DE HOY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(steps.toString().reversed().chunked(3).joinToString(" ").reversed(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                Text("de ${goal.toString()} pasos · demo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("de ${goal} pasos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButtonLabel("Editar meta manual", onEdit)
             }
         }
@@ -281,17 +275,18 @@ private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit) {
 
 @Composable
 private fun RestingHeartCard(current: Int, previous: Int?, modifier: Modifier, onClick: () -> Unit) {
-    val delta = trendDelta(current, previous)
+    val validCurrent = current.takeIf { it > 0 }
+    val delta = validCurrent?.let { trendDelta(it, previous) }
     Card(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
             Text("Pulso en reposo", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("$current", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(validCurrent?.toString() ?: "—", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text("lpm", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
-                delta?.let { (if (it > 0) "+" else "") + "$it vs. semana anterior" } ?: "Tendencia disponible",
+                delta?.let { (if (it > 0) "+" else "") + "$it vs. semana anterior" } ?: if (validCurrent == null) "Sin lectura reciente" else "Tendencia disponible",
                 style = MaterialTheme.typography.labelSmall,
                 color = if (delta != null && delta <= 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -303,6 +298,7 @@ private fun RestingHeartCard(current: Int, previous: Int?, modifier: Modifier, o
 
 @Composable
 private fun RestingHeartDetail(data: DashboardData) {
+    val current = data.restingHeartRate.takeIf { it > 0 }
     ElevatedCard(shape = RoundedCornerShape(26.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -313,15 +309,17 @@ private fun RestingHeartDetail(data: DashboardData) {
                 Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
             }
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("${data.restingHeartRate}", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
+                Text(current?.toString() ?: "—", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
                 Text("lpm", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.weight(1f))
-                trendDelta(data.restingHeartRate, data.previousRestingHeartRate)?.let { delta ->
-                    Text("${if (delta > 0) "+" else ""}$delta esta semana", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
+                current?.let { value ->
+                    trendDelta(value, data.previousRestingHeartRate)?.let { delta ->
+                        Text("${if (delta > 0) "+" else ""}$delta esta semana", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
+                    }
                 }
             }
             HeartRateSparkline(data.heartRateTrend, Modifier.fillMaxWidth())
-            Text("Muestra ficticia · no es una evaluación médica", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Lectura informativa · no es una evaluación médica", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -417,10 +415,13 @@ private fun formatDuration(minutes: Int): String {
     return "${minutes / 60} h ${minutes % 60} min"
 }
 
-private fun chartLabel(index: Int, range: TrendRange): String = if (range == TrendRange.WEEK) {
+private fun chartLabel(index: Int, range: TrendRange, count: Int): String = if (range == TrendRange.WEEK) {
     listOf("L", "M", "X", "J", "V", "S", "D").getOrElse(index) { "" }
-} else {
+} else if (count <= 12) {
     listOf("1", "4", "7", "10", "13", "16", "19", "22", "25", "28", "30").getOrElse(index) { "" }
+} else {
+    val date = LocalDate.now().minusDays((count - 1 - index).toLong())
+    if (index % 5 == 0 || index == count - 1) date.dayOfMonth.toString() else ""
 }
 
 private fun todayLabel(): String = LocalDate.now()

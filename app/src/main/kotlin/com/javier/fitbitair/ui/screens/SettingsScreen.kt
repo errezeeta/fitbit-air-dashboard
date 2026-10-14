@@ -38,7 +38,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun SettingsScreen(stepGoal: Int, onStepGoalChange: (Int) -> Unit) {
+fun SettingsScreen(
+    stepGoal: Int,
+    onStepGoalChange: (Int) -> Unit,
+    backendConfigured: Boolean,
+    googleConnected: Boolean,
+    googleOAuthConfigured: Boolean,
+    assistantConfigured: Boolean,
+    connectionMessage: String?,
+    onConnectGoogleHealth: () -> Unit,
+) {
     var editGoal by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
@@ -48,18 +57,44 @@ fun SettingsScreen(stepGoal: Int, onStepGoalChange: (Int) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Preferencias y conexiones", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("Estado actual del prototipo", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            if (backendConfigured) "Estado de las conexiones" else "Demo local · backend de Cloud Run pendiente",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         ConnectionCard(
             title = "Google Health",
-            subtitle = "Aún no conectado · integración pendiente",
-            icon = { Icon(Icons.Rounded.CloudOff, contentDescription = null) },
+            subtitle = when {
+                !backendConfigured -> "Cloud Run aún no está configurado."
+                !googleOAuthConfigured -> "El servidor está desplegado, pero falta completar la configuración OAuth."
+                googleConnected -> "Conectado · métricas consultadas a demanda."
+                else -> "No conectado · autoriza tu cuenta para leer pasos, sueño y pulso."
+            },
+            icon = {
+                Icon(
+                    if (googleConnected) Icons.Rounded.Favorite else Icons.Rounded.CloudOff,
+                    contentDescription = null,
+                    tint = if (googleConnected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            actionLabel = if (backendConfigured && googleOAuthConfigured) {
+                if (googleConnected) "Reautorizar" else "Conectar"
+            } else null,
+            onAction = onConnectGoogleHealth,
         )
         ConnectionCard(
             title = "Hermes",
-            subtitle = "Aún no conectado · se añadirá con autenticación HTTPS",
-            icon = { Icon(Icons.Rounded.Favorite, contentDescription = null) },
+            subtitle = if (assistantConfigured) {
+                "Configurado · el backend verifica que no haya herramientas activas antes de enviar métricas."
+            } else {
+                "Pendiente · falta enlazar el API Server de forma segura por HTTPS."
+            },
+            icon = { Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
         )
+        connectionMessage?.let { message ->
+            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
 
         ElevatedCard(shape = RoundedCornerShape(26.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -77,7 +112,7 @@ fun SettingsScreen(stepGoal: Int, onStepGoalChange: (Int) -> Unit) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Privacidad", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Por ahora toda la información visible es de muestra. Al integrar la API, las métricas se consultarán a demanda y no se conservará una base de datos propia en el móvil.",
+                    "El token de Google y la clave de Hermes permanecen en el servidor. El dispositivo guarda una sesión de app cifrada; las métricas se consultan a demanda y no se conserva un historial local. Si preguntas a la IA, se envía el resumen del periodo elegido.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -96,7 +131,13 @@ fun SettingsScreen(stepGoal: Int, onStepGoalChange: (Int) -> Unit) {
 }
 
 @Composable
-private fun ConnectionCard(title: String, subtitle: String, icon: @Composable () -> Unit) {
+private fun ConnectionCard(
+    title: String,
+    subtitle: String,
+    icon: @Composable () -> Unit,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+) {
     ElevatedCard(shape = RoundedCornerShape(24.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(18.dp),
@@ -104,9 +145,12 @@ private fun ConnectionCard(title: String, subtitle: String, icon: @Composable ()
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             icon()
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            actionLabel?.let { label ->
+                TextButton(onClick = onAction) { Text(label) }
             }
         }
     }

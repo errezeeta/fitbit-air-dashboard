@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,7 +52,14 @@ sealed interface AssistantMessage {
 }
 
 @Composable
-fun AssistantScreen(messages: List<AssistantMessage>, onSend: (String) -> Unit) {
+fun AssistantScreen(
+    messages: List<AssistantMessage>,
+    backendConfigured: Boolean,
+    googleConnected: Boolean,
+    assistantConfigured: Boolean,
+    isBusy: Boolean,
+    onSend: (String) -> Unit,
+) {
     var draft by remember { mutableStateOf("") }
     val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "assistant-orb")
         .animateFloat(
@@ -88,7 +96,16 @@ fun AssistantScreen(messages: List<AssistantMessage>, onSend: (String) -> Unit) 
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Tu asistente de salud", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("Modo demo · Hermes aún no conectado", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        when {
+                            !backendConfigured -> "Modo demo · backend pendiente"
+                            !googleConnected -> "Conecta Google Health en Ajustes"
+                            !assistantConfigured -> "Google Health conectado · Hermes pendiente"
+                            else -> "Hermes · métricas consultadas al preguntar"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -108,7 +125,7 @@ fun AssistantScreen(messages: List<AssistantMessage>, onSend: (String) -> Unit) 
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf("¿Cómo ha ido mi sueño esta semana?", "Resume mis pasos de los últimos 7 días", "¿Qué significa mi pulso en reposo?").forEach { prompt ->
-                            AssistChip(onClick = { onSend(prompt) }, label = { Text(prompt) })
+                            AssistChip(onClick = { onSend(prompt) }, enabled = !isBusy, label = { Text(prompt) })
                         }
                     }
                 }
@@ -126,6 +143,7 @@ fun AssistantScreen(messages: List<AssistantMessage>, onSend: (String) -> Unit) 
                 value = draft,
                 onValueChange = { draft = it.take(500) },
                 modifier = Modifier.weight(1f),
+                enabled = !isBusy,
                 placeholder = { Text("Escribe una pregunta…") },
                 shape = RoundedCornerShape(24.dp),
                 maxLines = 3,
@@ -134,7 +152,7 @@ fun AssistantScreen(messages: List<AssistantMessage>, onSend: (String) -> Unit) 
             )
             IconButton(
                 onClick = { submit(draft) { onSend(it); draft = "" } },
-                enabled = draft.isNotBlank(),
+                enabled = draft.isNotBlank() && !isBusy,
                 modifier = Modifier
                     .size(52.dp)
                     .background(
@@ -142,15 +160,23 @@ fun AssistantScreen(messages: List<AssistantMessage>, onSend: (String) -> Unit) 
                         shape = CircleShape,
                     ),
             ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.Send,
-                    contentDescription = "Enviar pregunta",
-                    tint = if (draft.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.Send,
+                        contentDescription = "Enviar pregunta",
+                        tint = if (draft.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         Text(
-            "Los datos mostrados son ficticios. No sustituye el consejo de un profesional sanitario.",
+            if (backendConfigured && googleConnected) {
+                "Se envía a Hermes un resumen solo cuando preguntas. No sustituye el consejo de un profesional sanitario."
+            } else {
+                "En modo demo, las métricas son ficticias. No sustituye el consejo de un profesional sanitario."
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp),

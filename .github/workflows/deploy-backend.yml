@@ -1,0 +1,86 @@
+name: Deploy Fitbit Air backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: Type DEPLOY to create or update the Cloud Run service
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Run backend tests
+        run: python -m unittest discover -s backend/tests -v
+
+  deploy:
+    needs: test
+    if: ${{ inputs.confirm_deploy == 'DEPLOY' }}
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          source: backend
+          service: fitbit-air-backend
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          region: ${{ vars.GCP_REGION }}
+          env_vars_update_strategy: merge
+          secrets_update_strategy: merge
+          env_vars: |-
+            GOOGLE_OAUTH_CLIENT_ID=${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+            GOOGLE_ALLOWED_EMAIL=${{ vars.GOOGLE_ALLOWED_EMAIL }}
+            GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}
+            GOOGLE_REFRESH_TOKEN_SECRET_NAME=fitbit-air-google-refresh-token
+          secrets: |-
+            GOOGLE_OAUTH_CLIENT_SECRET=fitbit-air-google-client-secret:latest
+            APP_SIGNING_SECRET=fitbit-air-app-signing-secret:latest
+          flags: >-
+            --allow-unauthenticated
+            --min 0
+            --max 1
+            --memory 512Mi
+            --cpu 1
+            --concurrency 10
+            --timeout 60s
+            --service-account=${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+
+      - name: Set the Google OAuth callback URL
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          SERVICE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          test -n "$SERVICE_URL"
+          gcloud run services update fitbit-air-backend \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --update-env-vars="GOOGLE_OAUTH_REDIRECT_URI=${SERVICE_URL}/oauth/google/callback"
+          printf 'Cloud Run URL: %s\n' "$SERVICE_URL"
+          printf 'OAuth redirect URI to authorize in Google Cloud: %s/oauth/google/callback\n' "$SERVICE_URL"

@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +61,7 @@ import com.javier.fitbitair.ui.screens.AssistantScreen
 import com.javier.fitbitair.ui.screens.HomeScreen
 import com.javier.fitbitair.ui.screens.SettingsScreen
 import com.javier.fitbitair.ui.screens.SleepScreen
+import kotlinx.coroutines.launch
 
 private enum class AppTab(
     val destination: DashboardDestination,
@@ -77,12 +79,22 @@ private enum class AppTab(
 fun FitbitAirApp(
     repository: HealthRepository,
     stepGoalStore: StepGoalStore,
+    backendConfigured: Boolean = false,
+    googleConnected: Boolean = false,
+    googleOAuthConfigured: Boolean = false,
+    assistantConfigured: Boolean = false,
+    connectionMessage: String? = null,
+    dataRevision: Int = 0,
+    onConnectGoogleHealth: () -> Unit = {},
+    onAskAssistant: suspend (String, TrendRange) -> String = { _, _ -> "El asistente todavía no está disponible." },
 ) {
     val stateStore = remember(stepGoalStore) {
         DashboardUiStateStore().apply { setStepGoal(stepGoalStore.getGoal()) }
     }
     var uiState by remember { mutableStateOf(stateStore.state) }
     var reloadToken by remember { mutableStateOf(0) }
+    var assistantBusy by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
     val chat = remember { mutableStateListOf<AssistantMessage>() }
 
     fun select(destination: DashboardDestination) {
@@ -102,7 +114,7 @@ fun FitbitAirApp(
         }
     }
 
-    LaunchedEffect(uiState.range, reloadToken) {
+    LaunchedEffect(uiState.range, reloadToken, dataRevision, googleConnected) {
         stateStore.updateDashboard(DashboardState.Loading)
         uiState = stateStore.state
         val loaded = try {
@@ -122,7 +134,7 @@ fun FitbitAirApp(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Salud diaria", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (uiState.destination == DashboardDestination.SETTINGS) "Preferencias" else "Fitbit Air · demo",
+                            if (uiState.destination == DashboardDestination.SETTINGS) "Preferencias" else "Fitbit Air",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -182,7 +194,7 @@ fun FitbitAirApp(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            SampleDataBanner()
+            DataSourceBanner(backendConfigured, googleConnected)
             AnimatedContent(
                 targetState = uiState.destination,
                 modifier = Modifier.weight(1f),
@@ -196,6 +208,12 @@ fun FitbitAirApp(
                     DashboardDestination.SETTINGS -> SettingsScreen(
                         stepGoal = uiState.stepGoal,
                         onStepGoalChange = ::updateStepGoal,
+                        backendConfigured = backendConfigured,
+                        googleConnected = googleConnected,
+                        googleOAuthConfigured = googleOAuthConfigured,
+                        assistantConfigured = assistantConfigured,
+                        connectionMessage = connectionMessage,
+                        onConnectGoogleHealth = onConnectGoogleHealth,
                     )
                     DashboardDestination.HOME -> DashboardContent(uiState.dashboard) { data ->
                         HomeScreen(
@@ -215,13 +233,54 @@ fun FitbitAirApp(
                     }
                     DashboardDestination.ASSISTANT -> AssistantScreen(
                         messages = chat,
+                        backendConfigured = backendConfigured,
+                        googleConnected = googleConnected,
+                        assistantConfigured = assistantConfigured,
+                        isBusy = assistantBusy,
                         onSend = { message ->
-                            chat += AssistantMessage.User(message)
-                            chat += AssistantMessage.Agent(
-                                text = "Esta app aún usa datos de muestra. Al conectar Hermes, la respuesta incluirá el periodo y las métricas consultadas.",
-                                usedData = "Demo · sin datos Fitbit reales",
-                                isDemo = true,
-                            )
+                            if (!assistantBusy) {
+                                chat += AssistantMessage.User(message)
+                                when {
+                                    !backendConfigured -> chat += AssistantMessage.Agent(
+                                        text = "Esta instalación aún usa datos de muestra. El backend de Cloud Run está pendiente.",
+                                        usedData = "Demo · sin datos Fitbit reales",
+                                        isDemo = true,
+                                    )
+                                    !googleConnected -> chat += AssistantMessage.Agent(
+                                        text = "Conecta Google Health en Ajustes para consultar tus métricas.",
+                                        usedData = "Sin datos de salud enviados",
+                                        isDemo = false,
+                                    )
+                                    !assistantConfigured -> chat += AssistantMessage.Agent(
+                                        text = "Hermes todavía no está configurado para esta app.",
+                                        usedData = "Google Health conectado · Hermes pendiente",
+                                        isDemo = false,
+                                    )
+                                    else -> {
+                                        val selectedRange = uiState.range
+                                        chat += AssistantMessage.Agent(
+                                            text = "Consultando tus métricas…",
+                                            usedData = "Google Health · ${selectedRange.label}",
+                                            isDemo = false,
+                                        )
+                                        val answerIndex = chat.lastIndex
+                                        assistantBusy = true
+                                        coroutineScope.launch {
+                                            val answer = try {
+                                                onAskAssistant(message, selectedRange)
+                                            } catch (_: Exception) {
+                                                "No se pudo consultar el asistente. Inténtalo de nuevo más tarde."
+                                            }
+                                            chat[answerIndex] = AssistantMessage.Agent(
+                                                text = answer,
+                                                usedData = "Google Health · ${selectedRange.label}",
+                                                isDemo = false,
+                                            )
+                                            assistantBusy = false
+                                        }
+                                    }
+                                }
+                            }
                         },
                     )
                 }
@@ -244,7 +303,12 @@ private fun DashboardContent(
 }
 
 @Composable
-private fun SampleDataBanner() {
+private fun DataSourceBanner(backendConfigured: Boolean, googleConnected: Boolean) {
+    val label = when {
+        !backendConfigured -> "Prototipo · datos ficticios"
+        !googleConnected -> "Google Health no conectado"
+        else -> "Google Health · consulta a demanda"
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -253,8 +317,8 @@ private fun SampleDataBanner() {
     ) {
         AssistChip(
             onClick = {},
-            label = { Text("Prototipo · datos ficticios") },
-            leadingIcon = { Text("●", color = MaterialTheme.colorScheme.tertiary) },
+            label = { Text(label) },
+            leadingIcon = { Text("●", color = if (googleConnected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline) },
         )
     }
 }

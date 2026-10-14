@@ -9,6 +9,7 @@ enum class SleepStageKind(val label: String) {
     LIGHT("Ligero"),
     DEEP("Profundo"),
     REM("REM"),
+    RESTLESS("Inquieto"),
     AWAKE("Despierto"),
 }
 
