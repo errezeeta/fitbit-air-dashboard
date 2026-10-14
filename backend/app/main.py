@@ -147,7 +147,9 @@ def create_app(
         lifespan=lifespan,
     )
 
-    @app.get("/healthz")
+    # Not "/healthz": Cloud Run's front end intercepts that path and answers with
+    # its own HTML 404, so the request never reaches the container.
+    @app.get("/api/health")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 

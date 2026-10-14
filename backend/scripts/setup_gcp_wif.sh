@@ -81,22 +81,37 @@ if ! gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
     --project="$PROJECT_ID" \
     --location=global \
     --workload-identity-pool="$POOL_ID" \
-    --display-name="Fitbit Air deploy from GitHub Actions" \
+    --display-name="Fitbit Air GitHub deploy" \
     --issuer-uri="https://token.actions.githubusercontent.com" \
     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
     --attribute-condition="assertion.repository == '${GITHUB_REPOSITORY}' && assertion.ref == 'refs/heads/main'"
 fi
 
-# The deployer can source-deploy Cloud Run and act as only the runtime identity.
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${DEPLOYER_EMAIL}" \
-  --role="roles/run.admin" \
-  --quiet >/dev/null
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${DEPLOYER_EMAIL}" \
-  --role="roles/serviceusage.serviceUsageConsumer" \
-  --quiet >/dev/null
+# The deployer builds from source (sourceDeveloper) and sets service IAM for
+# --allow-unauthenticated (run.admin); run.admin alone has NO Artifact Registry
+# or Cloud Build permissions, so both are required for a source deploy.
+for role in roles/run.sourceDeveloper roles/run.admin roles/serviceusage.serviceUsageConsumer; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${DEPLOYER_EMAIL}" \
+    --role="$role" \
+    --quiet >/dev/null
+done
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_EMAIL" \
+  --project="$PROJECT_ID" \
+  --member="serviceAccount:${DEPLOYER_EMAIL}" \
+  --role="roles/iam.serviceAccountUser" \
+  --quiet >/dev/null
+
+# A source deploy builds with the Compute Engine default service account (the
+# default build identity since the 2024 Cloud Build change), so it needs the
+# builder role and the deployer must be able to act as it. Without both, the
+# deploy fails with "caller does not have permission to act as service account".
+COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${COMPUTE_SA}" \
+  --role="roles/run.builder" \
+  --quiet >/dev/null
+gcloud iam service-accounts add-iam-policy-binding "$COMPUTE_SA" \
   --project="$PROJECT_ID" \
   --member="serviceAccount:${DEPLOYER_EMAIL}" \
   --role="roles/iam.serviceAccountUser" \

@@ -219,6 +219,11 @@ class BackendApiTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("server-only-client-secret", response.text)
         self.assertNotIn("server-only-session-secret", response.text)
+    async def test_health_endpoint_avoids_the_path_cloud_run_intercepts(self):
+        response = await self.client.get("/api/health")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({"status": "ok"}, response.json())
 
 
 if __name__ == "__main__":
