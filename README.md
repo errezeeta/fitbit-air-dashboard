@@ -8,6 +8,7 @@ Private Android app for a Pixel 9. The initial build uses demo data only; it doe
 - Home, Sleep, Activity, and AI tabs; 7/30-day trend selector.
 - Sleep duration/stages and app-calculated sleep efficiency, steps with a configurable local goal, resting heart rate trend.
 - AI screen is a non-networked UI stub until the secure Hermes connection is implemented.
+- Adaptive launcher icon: sleep crescent + pulse waveform in a Material You-inspired palette.
 - No persistent health-metric history in the app. The only local preference is the manual step-goal fallback.
 
 ## Build
