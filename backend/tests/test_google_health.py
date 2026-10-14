@@ -103,6 +103,15 @@ class GoogleHealthClientTest(unittest.TestCase):
             if request.url.host == "health.googleapis.com":
                 self.assertEqual("Bearer short-lived-access-token", request.headers["Authorization"])
 
+        heart_rate_request = next(r for r in requests if r.url.path.endswith("/daily-resting-heart-rate/dataPoints"))
+        heart_rate_filter = heart_rate_request.url.params["filter"]
+        # A multi-word data type uses underscores in a filter identifier while
+        # the path keeps hyphens. CamelCase is rejected with
+        # INVALID_DATA_POINT_FILTER_DATA_TYPE_RESTRICTION.
+        self.assertIn('daily_resting_heart_rate.date >= "2026-10-08"', heart_rate_filter)
+        self.assertIn('daily_resting_heart_rate.date < "2026-10-15"', heart_rate_filter)
+        self.assertNotIn("dailyRestingHeartRate", heart_rate_filter)
+
         sleep_request = next(r for r in requests if r.url.path.endswith("/sleep/dataPoints:reconcile"))
         sleep_filter = sleep_request.url.params["filter"]
         # Sleep supports only end-time filters; a start-time filter is rejected

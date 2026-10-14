@@ -136,9 +136,11 @@ class GoogleHealthClient:
         self, access_token: str, start_day: date, end_day: date
     ) -> dict:
         url = f"{GOOGLE_HEALTH_BASE_URL}/users/me/dataTypes/daily-resting-heart-rate/dataPoints"
+        # The path keeps hyphens but a multi-word filter identifier uses
+        # underscores; CamelCase is rejected as an unknown data type.
         query_filter = (
-            f'dailyRestingHeartRate.date >= "{start_day.isoformat()}" AND '
-            f'dailyRestingHeartRate.date < "{end_day.isoformat()}"'
+            f'daily_resting_heart_rate.date >= "{start_day.isoformat()}" AND '
+            f'daily_resting_heart_rate.date < "{end_day.isoformat()}"'
         )
         response = self._authorized_request(
             "GET",
