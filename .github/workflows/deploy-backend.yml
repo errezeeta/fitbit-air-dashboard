@@ -58,6 +58,7 @@ jobs:
             GOOGLE_ALLOWED_EMAIL=${{ vars.GOOGLE_ALLOWED_EMAIL }}
             GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}
             GOOGLE_REFRESH_TOKEN_SECRET_NAME=fitbit-air-google-refresh-token
+            HERMES_BRIDGE_SECRET=${{ secrets.HERMES_BRIDGE_SECRET }}
           secrets: |-
             GOOGLE_OAUTH_CLIENT_SECRET=fitbit-air-google-client-secret:latest
             APP_SIGNING_SECRET=fitbit-air-app-signing-secret:latest

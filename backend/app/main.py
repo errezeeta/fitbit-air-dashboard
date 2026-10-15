@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
+from backend.app.assistant_queue import AssistantQueue
 from backend.app.auth_service import GoogleAuthService
 from backend.app.google_health import GoogleHealthClient
 from backend.app.hermes_client import HermesClient
@@ -38,6 +40,8 @@ class AppSettings:
     refresh_token_secret_name: str = ""
     hermes_api_base_url: str = ""
     hermes_api_server_key: str = ""
+    hermes_bridge_secret: str = ""
+    hermes_bridge_wait_seconds: float = 25.0
 
     @classmethod
     def from_environment(cls) -> AppSettings:
@@ -53,6 +57,10 @@ class AppSettings:
             ),
             hermes_api_base_url=os.getenv("HERMES_API_BASE_URL", ""),
             hermes_api_server_key=os.getenv("HERMES_API_SERVER_KEY", ""),
+            hermes_bridge_secret=os.getenv("HERMES_BRIDGE_SECRET", ""),
+            hermes_bridge_wait_seconds=float(
+                os.getenv("HERMES_BRIDGE_WAIT_SECONDS", "25") or 25
+            ),
         )
 
 
@@ -66,6 +74,11 @@ class AssistantRequest(BaseModel):
     question: str = Field(min_length=1, max_length=800)
     range: Literal["week", "month"] = "week"
     timezone: str = Field(default="UTC", min_length=1, max_length=100)
+
+
+class BridgeAnswerRequest(BaseModel):
+    jobId: str = Field(min_length=1, max_length=64)
+    answer: str = Field(min_length=1, max_length=4000)
 
 
 def create_app(
@@ -133,6 +146,10 @@ def create_app(
             http_client=http_client,
         )
 
+    # The Hermes host cannot be reached inbound, so it polls for questions.
+    bridge_ready = bool(settings.hermes_bridge_secret)
+    assistant_queue = AssistantQueue() if bridge_ready else None
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         try:
@@ -158,7 +175,7 @@ def create_app(
         return {
             "googleOAuthConfigured": bool(oauth_ready),
             "healthConfigured": bool(health_ready),
-            "assistantConfigured": hermes_client is not None,
+            "assistantConfigured": hermes_client is not None or bridge_ready,
         }
 
     @app.get("/auth/google/start")
@@ -262,7 +279,7 @@ def create_app(
         request: AssistantRequest,
         authorization: str | None = Header(default=None),
     ) -> dict[str, str]:
-        if hermes_client is None:
+        if hermes_client is None and assistant_queue is None:
             raise HTTPException(status_code=503, detail="Hermes is not configured")
         if health_client is None or refresh_token_store is None:
             raise HTTPException(status_code=503, detail="Google Health is not configured")
@@ -285,14 +302,104 @@ def create_app(
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail="Google Health request failed") from exc
         try:
-            answer = hermes_client.ask(question=request.question, dashboard=dashboard)
+            answer = _assistant_answer(
+                question=request.question,
+                range_name=request.range,
+                timezone_name=request.timezone,
+                dashboard=dashboard,
+                hermes_client=hermes_client,
+                assistant_queue=assistant_queue,
+                wait_seconds=settings.hermes_bridge_wait_seconds,
+            )
         except PermissionError as exc:
             raise HTTPException(status_code=503, detail="Hermes API tool access is not restricted") from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail="Hermes bridge did not answer in time") from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail="Hermes assistant request failed") from exc
         return {"answer": answer, "dataRange": request.range}
 
+    def _require_bridge_key(candidate: str | None) -> None:
+        if not bridge_ready:
+            raise HTTPException(status_code=503, detail="Hermes bridge is not configured")
+        if not candidate or not hmac.compare_digest(candidate, settings.hermes_bridge_secret):
+            raise HTTPException(status_code=401, detail="Bridge key is invalid")
+
+    @app.post("/bridge/claim")
+    def bridge_claim(
+        x_bridge_key: str | None = Header(default=None),
+    ) -> dict:
+        """The Hermes host asks for outstanding work; empty job means "nothing"."""
+        _require_bridge_key(x_bridge_key)
+        assert assistant_queue is not None
+        return {"job": assistant_queue.claim()}
+
+    @app.post("/bridge/answer")
+    def bridge_answer(
+        payload: BridgeAnswerRequest,
+        x_bridge_key: str | None = Header(default=None),
+    ) -> dict[str, bool]:
+        _require_bridge_key(x_bridge_key)
+        assert assistant_queue is not None
+        return {"accepted": assistant_queue.answer(payload.jobId, payload.answer)}
+
+    @app.post("/bridge/enqueue")
+    def bridge_enqueue(
+        request: AssistantRequest,
+        x_bridge_key: str | None = Header(default=None),
+    ) -> dict[str, str]:
+        """Guarded self-test: queue a question without an app session, so the
+        whole claim/answer hop can be exercised from outside."""
+        _require_bridge_key(x_bridge_key)
+        assert assistant_queue is not None
+        job_id = assistant_queue.enqueue(
+            question=request.question,
+            range_name=request.range,
+            timezone=request.timezone,
+            dashboard={"status": "self-test"},
+        )
+        return {"jobId": job_id}
+
+    @app.get("/bridge/pending")
+    def bridge_pending(
+        x_bridge_key: str | None = Header(default=None),
+    ) -> dict[str, int]:
+        _require_bridge_key(x_bridge_key)
+        assert assistant_queue is not None
+        return {"pending": assistant_queue.pending_count()}
+
     return app
+
+
+def _assistant_answer(
+    *,
+    question: str,
+    range_name: str,
+    timezone_name: str,
+    dashboard: dict,
+    hermes_client,
+    assistant_queue: AssistantQueue | None,
+    wait_seconds: float,
+) -> str:
+    """Prefer a direct Hermes call; otherwise park the question for the bridge.
+
+    The bridge host polls for work because it has no inbound port, so the wait
+    happens here and the app only sees a slightly slower answer.
+    """
+    if hermes_client is not None:
+        return hermes_client.ask(question=question, dashboard=dashboard)
+    if assistant_queue is None:
+        raise RuntimeError("assistant is not configured")
+    job_id = assistant_queue.enqueue(
+        question=question,
+        range_name=range_name,
+        timezone=timezone_name,
+        dashboard=dashboard,
+    )
+    answer = assistant_queue.wait(job_id, timeout=wait_seconds)
+    if answer is None:
+        raise TimeoutError("Hermes bridge did not answer in time")
+    return answer
 
 
 def _session_claims(authorization: str | None, settings: AppSettings) -> dict:
