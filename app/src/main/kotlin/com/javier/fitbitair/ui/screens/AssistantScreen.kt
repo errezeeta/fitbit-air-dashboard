@@ -186,19 +186,31 @@ fun AssistantScreen(
 
 @Composable
 private fun MessageBubble(text: String, fromUser: Boolean) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
+    ) {
         Card(
             modifier = Modifier.fillMaxWidth(0.86f),
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(
+                topStart = if (fromUser) 20.dp else 6.dp,
+                topEnd = 20.dp,
+                bottomStart = 20.dp,
+                bottomEnd = if (fromUser) 6.dp else 20.dp,
+            ),
             colors = CardDefaults.cardColors(
-                containerColor = if (fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = if (fromUser) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.94f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
+                },
             ),
         ) {
             Text(
                 text,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (fromUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                color = if (fromUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
             )
         }
     }
@@ -206,14 +218,27 @@ private fun MessageBubble(text: String, fromUser: Boolean) {
 
 @Composable
 private fun AgentBubble(message: AssistantMessage.Agent) {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth(0.9f)) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth(0.92f)) {
         MessageBubble(message.text, fromUser = false)
-        Text(
-            message.usedData,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (message.isDemo) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(start = 8.dp),
-        )
+        ) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .background(
+                        color = if (message.isDemo) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                        shape = CircleShape,
+                    ),
+            )
+            Text(
+                message.usedData,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (message.isDemo) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
