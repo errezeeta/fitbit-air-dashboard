@@ -12,3 +12,7 @@
 **/__pycache__/
 *.py[cod]
 backend/.env
+
+# clave de firma: nunca al repositorio público
+keystore/
+keystore.properties

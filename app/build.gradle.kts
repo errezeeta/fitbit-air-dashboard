@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -8,17 +10,47 @@ val escapedBackendBaseUrl = backendBaseUrl.replace("\\", "\\\\").replace("\"", "
 val repoOwner = "errezeeta"
 val repoName = "fitbit-air-dashboard"
 
+// A pinned signing key. Without it each build inside the throwaway container
+// minted a fresh debug key, so every APK had a different signature and Android
+// refused to install it over the previous one ("App not installed").
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val hasPinnedKeystore = keystorePropertiesFile.exists()
+
 android {
     namespace = "com.javier.fitbitair"
     compileSdk = 37
     buildToolsVersion = "36.0.0"
 
+    signingConfigs {
+        if (hasPinnedKeystore) {
+            create("pinned") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            if (hasPinnedKeystore) {
+                signingConfig = signingConfigs.getByName("pinned")
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.javier.fitbitair"
         minSdk = 31
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.7.0"
+        versionCode = 9
+        versionName = "0.7.1"
         buildConfigField("String", "BACKEND_BASE_URL", "\"$escapedBackendBaseUrl\"")
         buildConfigField("String", "UPDATE_REPO", "\"https://api.github.com/repos/$repoOwner/$repoName/releases/latest\"")
         buildConfigField("int", "APP_VERSION_CODE", "$versionCode")
