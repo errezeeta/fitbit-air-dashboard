@@ -1,5 +1,7 @@
 package com.javier.fitbitair.domain
 
+import java.time.LocalDate
+
 data class SleepStage(
     val kind: SleepStageKind,
     val minutes: Int,
@@ -22,18 +24,23 @@ data class SleepSummary(
 )
 
 data class DailySteps(
+    /** Short axis tick: weekday initial or day of month. */
     val label: String,
     val steps: Int,
+    /** Full date, used to name the day in the tap-tooltip. */
+    val date: LocalDate? = null,
 )
 
 data class DailyRestingHeartRate(
     val label: String,
     val beatsPerMinute: Int,
+    val date: LocalDate? = null,
 )
 
 data class DailyDistance(
     val label: String,
     val meters: Int,
+    val date: LocalDate? = null,
 )
 
 data class DashboardData(

@@ -39,6 +39,7 @@ object BackendDashboardMapper {
                 DailySteps(
                     label = chartAxisLabel(date, range, index, stepsElements.size),
                     steps = point.intValue("steps"),
+                    date = date,
                 )
             },
             sleepTrend = sleepElements.mapNotNull { element ->
@@ -50,6 +51,7 @@ object BackendDashboardMapper {
                 DailyRestingHeartRate(
                     label = chartAxisLabel(date, range, index, heartRateElements.size),
                     beatsPerMinute = point.intValue("beatsPerMinute"),
+                    date = date,
                 )
             },
             distanceTodayMeters = root.intValue("distanceTodayMeters"),
@@ -59,6 +61,7 @@ object BackendDashboardMapper {
                 DailyDistance(
                     label = chartAxisLabel(date, range, index, distanceElements.size),
                     meters = point.intValue("meters"),
+                    date = date,
                 )
             },
         )
@@ -146,3 +149,13 @@ fun chartAxisLabel(date: LocalDate, range: TrendRange, index: Int, count: Int): 
     val isLast = index == count - 1
     return if (isFirst || isLast || index % step == 0) date.dayOfMonth.toString() else ""
 }
+
+/** Long, human form for the chart tooltip: "Jue 16 oct". */
+fun chartTooltipDate(date: LocalDate): String = date
+    .format(
+        java.time.format.DateTimeFormatter.ofPattern(
+            "EEE d MMM",
+            java.util.Locale.forLanguageTag("es-ES"),
+        ),
+    )
+    .replaceFirstChar { it.uppercase(java.util.Locale.forLanguageTag("es-ES")) }

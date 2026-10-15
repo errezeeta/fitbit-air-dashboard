@@ -2,10 +2,14 @@ package com.javier.fitbitair.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -14,6 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,10 +31,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.javier.fitbitair.domain.DailyDistance
@@ -34,89 +46,234 @@ import com.javier.fitbitair.domain.DailyRestingHeartRate
 import com.javier.fitbitair.domain.DailySteps
 import com.javier.fitbitair.domain.SleepStage
 import com.javier.fitbitair.domain.SleepStageKind
+import com.javier.fitbitair.domain.chartTooltipDate
+import java.text.NumberFormat
+import java.time.LocalDate
+import java.util.Locale
+
+private val esNumber: NumberFormat by lazy {
+    NumberFormat.getIntegerInstance(Locale.forLanguageTag("es-ES"))
+}
+
+fun formatStepsCount(value: Int): String = esNumber.format(value)
+
+fun formatDistanceValue(meters: Int): String {
+    if (meters < 1_000) return "$meters m"
+    val kilometres = meters / 1_000.0
+    return String.format(Locale.forLanguageTag("es-ES"), "%.1f km", kilometres)
+}
+
+fun formatDurationValue(minutes: Int): String {
+    if (minutes <= 0) return "—"
+    return "${minutes / 60} h ${minutes % 60} min"
+}
+
+private data class TrendEntry(
+    val value: Int,
+    val axisLabel: String,
+    val date: LocalDate?,
+)
 
 /**
- * Bar charts render in one Canvas: every value maps against the plot area
- * instead of a per-bar Column, so tick labels stay centred under their bar and
- * a highlighted "today" bar cannot overpaint its neighbours.
+ * Bar charts render in one Canvas and are tappable: pointing at a bar lifts it
+ * and names the day that value belongs to. A dashed average line runs across
+ * the plot so the trend reads at a glance.
  */
 @Composable
 fun StepsBarChart(data: List<DailySteps>, modifier: Modifier = Modifier) {
     TrendBarChart(
-        values = data.map { it.steps },
-        labels = data.map { it.label },
+        entries = data.map { TrendEntry(it.steps, it.label, it.date) },
+        tooltipDetail = { steps -> "${formatStepsCount(steps)} pasos" },
         highlightColor = MaterialTheme.colorScheme.primary,
-        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.40f),
-        axisColor = MaterialTheme.colorScheme.outline,
-        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
+        averageLabel = averageTooltip(data.map { it.steps }) { "${formatStepsCount(it)} pasos" },
+        modifier = modifier,
     )
 }
 
 @Composable
 fun DistanceBarChart(data: List<DailyDistance>, modifier: Modifier = Modifier) {
     TrendBarChart(
-        values = data.map { it.meters },
-        labels = data.map { it.label },
+        entries = data.map { TrendEntry(it.meters, it.label, it.date) },
+        tooltipDetail = ::formatDistanceValue,
         highlightColor = MaterialTheme.colorScheme.secondary,
-        trackColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.40f),
-        axisColor = MaterialTheme.colorScheme.outline,
-        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        trackColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.34f),
+        averageLabel = averageTooltip(data.map { it.meters }) { formatDistanceValue(it) },
+        modifier = modifier,
+    )
+}
+
+/** "media 12 400 pasos"-style chip fed to the chart header. */
+private inline fun averageTooltip(values: List<Int>, format: (Int) -> String): String {
+    if (values.isEmpty()) return ""
+    val average = values.sum().toDouble() / values.size
+    return "media ${format(Math.round(average).toInt())}"
+}
+
+@Composable
+/** Sleep trend shares the same interaction with minutes as the value. */
+fun SleepTrendChart(values: List<Int>, axisLabels: List<String>, modifier: Modifier = Modifier) {
+    TrendBarChart(
+        entries = values.mapIndexed { index, asleep ->
+            TrendEntry(asleep, axisLabels.getOrElse(index) { "" }, null)
+        },
+        tooltipDetail = ::formatDurationValue,
+        highlightColor = MaterialTheme.colorScheme.tertiary,
+        trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.30f),
+        averageLabel = "",
+        modifier = modifier,
     )
 }
 
 @Composable
 private fun TrendBarChart(
-    values: List<Int>,
-    labels: List<String>,
+    entries: List<TrendEntry>,
+    tooltipDetail: (Int) -> String,
     highlightColor: Color,
     trackColor: Color,
-    axisColor: Color,
-    labelColor: Color,
+    averageLabel: String,
     modifier: Modifier = Modifier,
 ) {
-    if (values.isEmpty()) {
-        Box(modifier.fillMaxWidth().height(124.dp))
+    if (entries.isEmpty()) {
+        Box(modifier.fillMaxWidth().height(128.dp)) {}
         return
     }
+    var selected by remember(entries) { mutableStateOf(entries.lastIndex) }
     val measurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = labelColor, fontSize = 10.sp)
-    val plotHeight = 104.dp
-    val tickArea = 26.dp
-    Canvas(modifier = modifier.fillMaxWidth().height(plotHeight + tickArea)) {
-        val maximum = (values.maxOrNull() ?: 1).coerceAtLeast(1)
-        val plotWidth = size.width
-        val baselineY = plotHeight.toPx()
-        val slot = plotWidth / values.size
-        val barWidth = (slot * if (values.size > 16) 0.60f else 0.70f).coerceAtMost(22.dp.toPx())
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
+    val axisColor = MaterialTheme.colorScheme.outline
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 10.sp,
+    )
+    val plotHeight = 108.dp
 
-        // three faint guides instead of a dense grid
-        listOf(0f, 0.5f, 1f).forEach { fraction ->
-            val y = baselineY - fraction * plotHeight.toPx()
-            drawLine(axisColor.copy(alpha = 0.15f), Offset(0f, y), Offset(plotWidth, y), 1.dp.toPx())
-        }
+    Column(modifier = modifier.fillMaxWidth()) {
+        SelectedTooltip(entries, selected, tooltipDetail, highlightColor, averageLabel)
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(plotHeight + 24.dp)
+                .pointerInput(entries) {
+                    detectTapGestures { offset ->
+                        selected = (offset.x / (size.width / entries.size))
+                            .toInt()
+                            .coerceIn(0, entries.lastIndex)
+                    }
+                },
+        ) {
+            val plotWidth = size.width
+            val baselineY = plotHeight.toPx()
+            val slot = plotWidth / entries.size
+            val barWidth = (slot * if (entries.size > 16) 0.62f else 0.72f).coerceAtMost(22.dp.toPx())
+            val maximum = entries.maxOf { it.value }.coerceAtLeast(1)
+            val average = entries.sumOf { it.value }.toFloat() / entries.size
 
-        values.forEachIndexed { index, value ->
-            val fraction = (value.toFloat() / maximum).coerceIn(0f, 1f)
-            if (fraction > 0f) {
-                val barHeight = fraction * plotHeight.toPx()
-                val left = slot * (index + 0.5f) - barWidth / 2
-                drawRoundRect(
-                    color = if (index == values.lastIndex) highlightColor else trackColor,
-                    topLeft = Offset(left, baselineY - barHeight),
-                    size = Size(barWidth, barHeight),
-                    cornerRadius = CornerRadius(barWidth / 2, barWidth / 2),
+            listOf(0f, 0.5f, 1f).forEach { fraction ->
+                val y = baselineY - fraction * plotHeight.toPx()
+                drawLine(
+                    gridColor,
+                    Offset(0f, y),
+                    Offset(plotWidth, y),
+                    1.dp.toPx(),
                 )
             }
-            val label = labels.getOrNull(index) ?: ""
-            if (label.isNotEmpty()) {
-                val measured = measurer.measure(label, labelStyle)
-                val x = (slot * (index + 0.5f) - measured.size.width / 2f)
-                    .coerceIn(0f, (plotWidth - measured.size.width).coerceAtLeast(0f))
-                drawText(measured, topLeft = Offset(x, baselineY + 7.dp.toPx()))
-            }
-        }
+            drawLine(
+                highlightColor,
+                Offset(0f, baselineY - (average / maximum) * plotHeight.toPx()),
+                Offset(plotWidth, baselineY - (average / maximum) * plotHeight.toPx()),
+                1.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)),
+            )
 
-        drawLine(axisColor, Offset(0f, baselineY), Offset(plotWidth, baselineY), 1.5.dp.toPx(), StrokeCap.Round)
+            entries.forEachIndexed { index, entry ->
+                val fraction = (entry.value.toFloat() / maximum).coerceIn(0f, 1f)
+                if (fraction > 0f) {
+                    val barHeight = fraction * plotHeight.toPx()
+                    val top = baselineY - barHeight
+                    val barColor = if (index == selected) highlightColor else trackColor
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(barColor, barColor.copy(alpha = 0.55f)),
+                            startY = top,
+                            endY = baselineY,
+                        ),
+                        topLeft = Offset(slot * (index + 0.5f) - barWidth / 2, top),
+                        size = Size(barWidth, barHeight),
+                        cornerRadius = CornerRadius(barWidth / 2, barWidth / 2),
+                    )
+                }
+                val label = entry.axisLabel
+                if (label.isNotEmpty()) {
+                    val emphasized = index == selected
+                    val measured = measurer.measure(
+                        label,
+                        labelStyle.copy(
+                            color = if (emphasized) highlightColor else labelStyle.color,
+                            fontWeight = if (emphasized) FontWeight.SemiBold else labelStyle.fontWeight,
+                        ),
+                    )
+                    val x = (slot * (index + 0.5f) - measured.size.width / 2f)
+                        .coerceIn(0f, (plotWidth - measured.size.width).coerceAtLeast(0f))
+                    drawText(measured, topLeft = Offset(x, baselineY + 8.dp.toPx()))
+                }
+            }
+
+            drawLine(
+                axisColor,
+                Offset(0f, baselineY),
+                Offset(plotWidth, baselineY),
+                1.5.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectedTooltip(
+    entries: List<TrendEntry>,
+    selected: Int,
+    tooltipDetail: (Int) -> String,
+    highlightColor: Color,
+    averageLabel: String,
+) {
+    val entry = entries.getOrNull(selected) ?: return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                entry.date?.let(::chartTooltipDate) ?: entry.axisLabel.ifEmpty { "Hoy" },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                tooltipDetail(entry.value),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = highlightColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (averageLabel.isNotEmpty()) {
+            Text(
+                averageLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            )
+        }
     }
 }
 

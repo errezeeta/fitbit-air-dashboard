@@ -64,7 +64,9 @@ import com.javier.fitbitair.ui.components.DistanceBarChart
 import com.javier.fitbitair.ui.components.HeartRateSparkline
 import com.javier.fitbitair.ui.components.SleepStageBar
 import com.javier.fitbitair.ui.components.SleepStageLegend
+import com.javier.fitbitair.ui.components.SleepTrendChart
 import com.javier.fitbitair.ui.components.StepsBarChart
+import com.javier.fitbitair.ui.components.formatDistanceValue
 
 @Composable
 fun HomeScreen(
@@ -147,9 +149,12 @@ fun SleepScreen(data: DashboardData, range: TrendRange, onRangeChange: (TrendRan
             StatCard("Sueño profundo", formatDuration(data.sleep.stages.firstOrNull { it.kind == SleepStageKind.DEEP }?.minutes ?: 0), "fase registrada", Modifier.weight(1f))
         }
         TrendPanel("Duración del sueño", range, onRangeChange) {
-            StepsBarChart(data.sleepTrend.mapIndexed { index, item ->
-                DailySteps(chartLabel(index, range, data.sleepTrend.size), item.asleepMinutes)
-            })
+            SleepTrendChart(
+                values = data.sleepTrend.map { it.asleepMinutes },
+                axisLabels = data.sleepTrend.indices.map { index ->
+                    chartLabel(index, range, data.sleepTrend.size)
+                },
+            )
         }
         InfoNote("*La eficiencia es un cálculo propio (tiempo dormido ÷ tiempo en cama). No es el Sleep Score de Fitbit.")
     }
@@ -256,7 +261,7 @@ private fun DistanceCard(meters: Int, modifier: Modifier = Modifier) {
                 Text("Distancia de hoy", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f))
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        formatDistance(meters),
+                        formatDistanceValue(meters),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -463,14 +468,6 @@ private fun InfoNote(text: String) {
 private fun formatDuration(minutes: Int): String {
     if (minutes <= 0) return "—"
     return "${minutes / 60} h ${minutes % 60} min"
-}
-
-/** Meters are read better in metres when short, kilometres when long. */
-private fun formatDistance(meters: Int): String {
-    if (meters < 1_000) return "$meters m"
-    val kilometres = meters / 1_000f
-    val shortened = (kilometres * 100).toInt() / 100f
-    return "${shortened.toString().replace('.', ',')} km"
 }
 
 private fun chartLabel(index: Int, range: TrendRange, count: Int): String = if (range == TrendRange.WEEK) {
