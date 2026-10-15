@@ -37,6 +37,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.javier.fitbitair.data.AppUpdater
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
@@ -261,10 +264,7 @@ private fun SoftwareUpdateCard(updater: AppUpdater?, appVersionName: String) {
                         }
                     }
                 }) { Text("Instalar ${snapshot.update.versionName}") }
-                is UpdateUiState.ReadyToInstall -> Button(onClick = {
-                    val updaterInstance = updater ?: return@Button
-                    updaterInstance.startInstall(snapshot.prep)
-                }) { Text("Abrir instalador") }
+                is UpdateUiState.ReadyToInstall -> InstallAction(updater, snapshot.prep)
             }
         }
     }
@@ -272,3 +272,63 @@ private fun SoftwareUpdateCard(updater: AppUpdater?, appVersionName: String) {
 
 
 private fun formatGoal(value: Int): String = value.toString().reversed().chunked(3).joinToString(" ").reversed()
+
+/**
+ * Two-step install: Android only lets an app launch the package installer once
+ * the user has allowed "install unknown apps" for it, so when that is missing
+ * we send them to that exact settings page and install on the way back.
+ */
+@Composable
+private fun InstallAction(updater: AppUpdater?, prep: AppUpdater.InstallPreparation) {
+    val context = LocalContext.current
+    var failure by remember { mutableStateOf<String?>(null) }
+    var allowed by remember { mutableStateOf(updater?.canInstallPackages() == true) }
+
+    val settingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        val resolved = updater?.canInstallPackages() == true
+        allowed = resolved
+        if (resolved && updater.startInstall(prep)) failure = null
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (allowed) {
+            Button(onClick = {
+                val started = updater?.startInstall(prep) == true
+                failure = if (started) null else "Android no encontró un instalador para esta APK."
+            }) {
+                Text("Abrir instalador")
+            }
+            Text(
+                "Si el instalador se cierra solo, activa «Instalar apps desconocidas» para esta app.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Button(onClick = {
+                val intent = updater?.unknownSourcesSettingsIntent()
+                if (intent != null) {
+                    runCatching { settingsLauncher.launch(intent) }
+                        .onFailure { context.startActivity(intent) }
+                } else {
+                    failure = "No se pudo abrir los ajustes de instalación."
+                }
+            }) {
+                Text("Permitir instalación")
+            }
+            Text(
+                "Android exige autorizar a esta app para instalar la actualización. Al volver, se abrirá sola.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        failure?.let { message ->
+            Text(
+                message,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
