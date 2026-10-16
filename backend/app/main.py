@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hmac
 import os
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -27,6 +29,23 @@ from backend.app.tokens import verify_token
 
 
 MOBILE_CALLBACK_URI = "fitbitair://oauth/callback"
+
+# Google's numbers move slowly, so a short cache turns "open the app again" from
+# four Google round trips into an instant answer. Keyed by day so a new day never
+# serves yesterday's "today" totals.
+_DASHBOARD_CACHE_SECONDS = float(os.getenv("DASHBOARD_CACHE_SECONDS", "60"))
+_dashboard_cache: dict[tuple, tuple[float, dict]] = {}
+
+
+def _cached_dashboard(key: tuple, loader) -> dict:
+    moment = time.monotonic()
+    hit = _dashboard_cache.get(key)
+    if hit is not None and moment - hit[0] < _DASHBOARD_CACHE_SECONDS:
+        return hit[1]
+    payload = loader()
+    if isinstance(payload, dict) and payload.get("status") in {"ready", "empty"}:
+        _dashboard_cache[key] = (moment, payload)
+    return payload
 
 
 @dataclass(frozen=True)
@@ -266,11 +285,17 @@ def create_app(
             raise HTTPException(status_code=400, detail="Timezone is invalid") from exc
         try:
             refresh_token = refresh_token_store.read_refresh_token()
-            return health_client.load_dashboard(
-                refresh_token=refresh_token,
-                timezone_name=timezone_name,
-                days=7 if range_name == "week" else 30,
-            )
+            client = health_client
+
+            def load() -> dict:
+                return client.load_dashboard(
+                    refresh_token=refresh_token,
+                    timezone_name=timezone_name,
+                    days=7 if range_name == "week" else 30,
+                )
+
+            cache_key = ("dashboard", session["email"].casefold(), timezone_name, range_name, date.today().isoformat())
+            return _cached_dashboard(cache_key, load)
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail="Google Health request failed") from exc
 
@@ -294,11 +319,24 @@ def create_app(
             raise HTTPException(status_code=400, detail="Timezone is invalid") from exc
         try:
             refresh_token = refresh_token_store.read_refresh_token()
-            dashboard = health_client.load_dashboard(
-                refresh_token=refresh_token,
-                timezone_name=request.timezone,
-                days=7 if request.range == "week" else 30,
+            client = health_client
+            days = 7 if request.range == "week" else 30
+
+            def load() -> dict:
+                return client.load_dashboard(
+                    refresh_token=refresh_token,
+                    timezone_name=request.timezone,
+                    days=days,
+                )
+
+            cache_key = (
+                "dashboard",
+                session["email"].casefold(),
+                request.timezone,
+                request.range,
+                date.today().isoformat(),
             )
+            dashboard = _cached_dashboard(cache_key, load)
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail="Google Health request failed") from exc
         try:

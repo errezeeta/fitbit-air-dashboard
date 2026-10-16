@@ -3,6 +3,7 @@ import unittest
 
 import httpx
 
+from backend.app import main as main_module
 from backend.app.main import AppSettings, create_app
 from backend.app.oauth import create_oauth_state
 from backend.app.tokens import DEFAULT_AUDIENCE, DEFAULT_ISSUER, sign_token
@@ -37,9 +38,14 @@ class FakeAuthService:
 class FakeHealthClient:
     def __init__(self):
         self.call = None
+        self.calls = 0
+        self.fail = False
 
     def load_dashboard(self, **kwargs):
         self.call = kwargs
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("google health is down")
         return {"status": "ready", "stepsToday": 6100}
 
 
@@ -54,6 +60,7 @@ class FakeHermesClient:
 
 class BackendApiTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        main_module._dashboard_cache.clear()
         self.settings = AppSettings(
             google_client_id="web-client-id",
             google_client_secret="server-only-client-secret",
@@ -111,6 +118,55 @@ class BackendApiTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Europe/Madrid", self.health_client.call["timezone_name"])
         self.assertNotIn("server-side-google-refresh-token", response.text)
         self.assertNotIn("server-only-client-secret", response.text)
+
+    def _session_header(self, *, scope: str = "dashboard", email: str = "javier@example.com") -> dict:
+        now = int(time.time())
+        session = sign_token(
+            {
+                "iss": DEFAULT_ISSUER,
+                "aud": DEFAULT_AUDIENCE,
+                "sub": "google-subject",
+                "email": email,
+                "iat": now,
+                "exp": now + 300,
+                "scope": scope,
+            },
+            secret="server-only-session-secret",
+        )
+        return {"Authorization": f"Bearer {session}"}
+
+    async def test_a_second_dashboard_call_is_answered_from_the_short_cache(self):
+        headers = self._session_header()
+
+        first = await self.client.get("/api/dashboard?range=week&timezone=Europe/Madrid", headers=headers)
+        second = await self.client.get("/api/dashboard?range=week&timezone=Europe/Madrid", headers=headers)
+
+        self.assertEqual(200, first.status_code)
+        self.assertEqual(200, second.status_code)
+        self.assertEqual(first.json(), second.json())
+        # Reopening the app must not mean another four Google round trips.
+        self.assertEqual(1, self.health_client.calls)
+
+    async def test_a_failed_dashboard_load_is_not_cached(self):
+        headers = self._session_header()
+        self.health_client.fail = True
+
+        first = await self.client.get("/api/dashboard?range=week&timezone=Europe/Madrid", headers=headers)
+        second = await self.client.get("/api/dashboard?range=week&timezone=Europe/Madrid", headers=headers)
+
+        self.assertEqual(502, first.status_code)
+        self.assertEqual(502, second.status_code)
+        # A failure must be retried, never served from the cache.
+        self.assertEqual(2, self.health_client.calls)
+
+    async def test_each_range_and_day_has_its_own_cache_entry(self):
+        headers = self._session_header()
+
+        await self.client.get("/api/dashboard?range=week&timezone=Europe/Madrid", headers=headers)
+        await self.client.get("/api/dashboard?range=month&timezone=Europe/Madrid", headers=headers)
+        await self.client.get("/api/dashboard?range=week&timezone=UTC", headers=headers)
+
+        self.assertEqual(3, self.health_client.calls)
 
     async def test_dashboard_rejects_a_session_for_another_google_account(self):
         now = int(time.time())
