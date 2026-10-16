@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.javier.fitbitair.domain.DailyDistance
 import com.javier.fitbitair.domain.DailyRestingHeartRate
+import com.javier.fitbitair.domain.DailySleep
 import com.javier.fitbitair.domain.DailySteps
 import com.javier.fitbitair.domain.SleepStage
 import com.javier.fitbitair.domain.SleepStageKind
@@ -86,40 +87,53 @@ private data class TrendEntry(
  * each sits on its own track, and a dashed average line crosses the plot.
  */
 @Composable
-fun StepsBarChart(data: List<DailySteps>, modifier: Modifier = Modifier) {
+fun StepsBarChart(
+    data: List<DailySteps>,
+    onOpenDay: ((LocalDate) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     TrendBarChart(
         entries = data.map { TrendEntry(it.steps, it.label, it.date) },
         tooltipDetail = { steps -> "${formatStepsCount(steps)} pasos" },
         barValue = ::compactSteps,
         highlightColor = MaterialTheme.colorScheme.primary,
         averageLabel = averageTooltip(data.map { it.steps }) { "${formatStepsCount(it)} pasos" },
+        onOpenDay = onOpenDay,
         modifier = modifier,
     )
 }
 
 @Composable
-fun DistanceBarChart(data: List<DailyDistance>, modifier: Modifier = Modifier) {
+fun DistanceBarChart(
+    data: List<DailyDistance>,
+    onOpenDay: ((LocalDate) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     TrendBarChart(
         entries = data.map { TrendEntry(it.meters, it.label, it.date) },
         tooltipDetail = ::formatDistanceValue,
         barValue = ::compactDistance,
         highlightColor = MaterialTheme.colorScheme.secondary,
         averageLabel = averageTooltip(data.map { it.meters }) { formatDistanceValue(it) },
+        onOpenDay = onOpenDay,
         modifier = modifier,
     )
 }
 
 /** Sleep trend shares the same interaction, with minutes as the value. */
 @Composable
-fun SleepTrendChart(values: List<Int>, axisLabels: List<String>, modifier: Modifier = Modifier) {
+fun SleepTrendChart(
+    data: List<DailySleep>,
+    onOpenDay: ((LocalDate) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     TrendBarChart(
-        entries = values.mapIndexed { index, asleep ->
-            TrendEntry(asleep, axisLabels.getOrElse(index) { "" }, null)
-        },
+        entries = data.map { TrendEntry(it.summary.asleepMinutes, it.label, it.date) },
         tooltipDetail = ::formatDurationValue,
         barValue = ::compactMinutes,
         highlightColor = MaterialTheme.colorScheme.tertiary,
-        averageLabel = "",
+        averageLabel = averageTooltip(data.map { it.summary.asleepMinutes }) { formatDurationValue(it) },
+        onOpenDay = onOpenDay,
         modifier = modifier,
     )
 }
@@ -138,6 +152,7 @@ private fun TrendBarChart(
     barValue: (Int) -> String,
     highlightColor: Color,
     averageLabel: String,
+    onOpenDay: ((LocalDate) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     if (entries.isEmpty()) {
@@ -165,12 +180,22 @@ private fun TrendBarChart(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(plotHeight + 26.dp)
-                .pointerInput(entries) {
-                    detectTapGestures { offset ->
-                        selected = (offset.x / (size.width / entries.size))
-                            .toInt()
-                            .coerceIn(0, entries.lastIndex)
-                    }
+                .pointerInput(entries, onOpenDay) {
+                    detectTapGestures(
+                        onTap = { offset ->
+                            selected = (offset.x / (size.width / entries.size))
+                                .toInt()
+                                .coerceIn(0, entries.lastIndex)
+                        },
+                        // Holding a bar opens that day: which day, what was recorded.
+                        onLongPress = { offset ->
+                            val index = (offset.x / (size.width / entries.size))
+                                .toInt()
+                                .coerceIn(0, entries.lastIndex)
+                            selected = index
+                            entries.getOrNull(index)?.date?.let { day -> onOpenDay?.invoke(day) }
+                        },
+                    )
                 },
         ) {
             val plotWidth = size.width
@@ -417,7 +442,11 @@ private fun stageColor(kind: SleepStageKind) = when (kind) {
  * period average as a dashed reference and the latest reading ringed.
  */
 @Composable
-fun HeartRateSparkline(data: List<DailyRestingHeartRate>, modifier: Modifier = Modifier) {
+fun HeartRateSparkline(
+    data: List<DailyRestingHeartRate>,
+    onOpenDay: ((LocalDate) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     if (data.isEmpty()) return
     val lineColor = MaterialTheme.colorScheme.tertiary
     val axisColor = MaterialTheme.colorScheme.outline
@@ -425,7 +454,21 @@ fun HeartRateSparkline(data: List<DailyRestingHeartRate>, modifier: Modifier = M
     val values = data.map { it.beatsPerMinute.toFloat() }
     val average = values.average()
 
-    Canvas(modifier = modifier.fillMaxWidth().height(84.dp)) {
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(84.dp)
+            .pointerInput(data, onOpenDay) {
+                detectTapGestures(
+                    onLongPress = { offset ->
+                        if (onOpenDay == null || data.isEmpty()) return@detectTapGestures
+                        val slotWidth = size.width / data.size
+                        val index = (offset.x / slotWidth).toInt().coerceIn(0, data.lastIndex)
+                        data[index].date?.let(onOpenDay)
+                    },
+                )
+            },
+    ) {
         val minimum = (values.minOrNull() ?: 0f) - 4f
         val maximum = (values.maxOrNull() ?: 1f) + 4f
         val span = (maximum - minimum).coerceAtLeast(1f)

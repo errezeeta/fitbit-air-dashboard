@@ -74,6 +74,12 @@ class DashboardUiStateStoreTest {
         store.beginRefresh()
 
         assertEquals(ready, store.state.dashboard)
+        // The data stays on screen while the spinner runs over it.
+        assertEquals(true, store.state.refreshing)
+
+        store.updateDashboard(ready)
+
+        assertEquals(false, store.state.refreshing)
     }
 
     @Test

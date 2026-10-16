@@ -80,7 +80,11 @@ class BackendDashboardMapperTest {
             data.heartRateTrend.map { it.label },
         )
         assertEquals(7, data.sleepTrend.size)
-        assertEquals(410, data.sleepTrend.first().asleepMinutes)
+        assertEquals(410, data.sleepTrend.first().summary.asleepMinutes)
+        assertEquals(
+            LocalDate.parse("2026-10-12"),
+            data.sleepTrend.first().date,
+        )
         assertEquals(1, data.distanceTrend.size)
         assertEquals(4123, data.distanceTrend.single().meters)
     }

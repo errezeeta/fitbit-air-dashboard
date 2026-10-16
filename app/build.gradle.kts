@@ -49,8 +49,8 @@ android {
         applicationId = "com.javier.fitbitair"
         minSdk = 31
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.7.1"
+        versionCode = 10
+        versionName = "0.8.0"
         buildConfigField("String", "BACKEND_BASE_URL", "\"$escapedBackendBaseUrl\"")
         buildConfigField("String", "UPDATE_REPO", "\"https://api.github.com/repos/$repoOwner/$repoName/releases/latest\"")
         buildConfigField("int", "APP_VERSION_CODE", "$versionCode")

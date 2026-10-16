@@ -55,10 +55,13 @@ import com.javier.fitbitair.domain.DashboardState
 import com.javier.fitbitair.domain.DashboardUiStateStore
 import com.javier.fitbitair.domain.HealthRepository
 import com.javier.fitbitair.domain.TrendRange
+import com.javier.fitbitair.domain.snapshotFor
 import com.javier.fitbitair.ui.screens.ActivityScreen
 import com.javier.fitbitair.ui.screens.AssistantMessage
 import com.javier.fitbitair.ui.screens.AssistantScreen
+import com.javier.fitbitair.ui.screens.DayDetailSheet
 import com.javier.fitbitair.ui.screens.HomeScreen
+import com.javier.fitbitair.ui.screens.MetricDetailScreen
 import com.javier.fitbitair.ui.screens.SettingsScreen
 import com.javier.fitbitair.ui.screens.SleepScreen
 import kotlinx.coroutines.launch
@@ -95,10 +98,13 @@ fun FitbitAirApp(
     var uiState by remember { mutableStateOf(stateStore.state) }
     var reloadToken by remember { mutableStateOf(0) }
     var assistantBusy by remember { mutableStateOf(false) }
+    var detailMetric by remember { mutableStateOf<com.javier.fitbitair.domain.MetricKind?>(null) }
+    var daySheet by remember { mutableStateOf<java.time.LocalDate?>(null) }
     val coroutineScope = rememberCoroutineScope()
     val chat = remember { mutableStateListOf<AssistantMessage>() }
 
     fun select(destination: DashboardDestination) {
+        detailMetric = null
         stateStore.select(destination)
         uiState = stateStore.state
     }
@@ -144,7 +150,11 @@ fun FitbitAirApp(
                     }
                 },
                 navigationIcon = {
-                    if (uiState.destination == DashboardDestination.SETTINGS) {
+                    if (detailMetric != null) {
+                        IconButton(onClick = { detailMetric = null }) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Volver")
+                        }
+                    } else if (uiState.destination == DashboardDestination.SETTINGS) {
                         IconButton(onClick = {
                             stateStore.closeSettings()
                             uiState = stateStore.state
@@ -203,6 +213,31 @@ fun FitbitAirApp(
                 .padding(padding),
         ) {
             DataSourceBanner(backendConfigured, googleConnected)
+            // One place for the day sheet, so holding a bar works in every screen.
+            (uiState.dashboard as? DashboardState.Ready)?.let { ready ->
+                daySheet?.let { day ->
+                    DayDetailSheet(
+                        snapshot = ready.data.snapshotFor(day),
+                        onDismiss = { daySheet = null },
+                    )
+                }
+            }
+            val openDetail = detailMetric
+            if (openDetail != null) {
+                AnimatedContent(targetState = uiState.dashboard, modifier = Modifier.weight(1f), label = "detail-transition") { state ->
+                    DashboardContent(state, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
+                        MetricDetailScreen(
+                            kind = openDetail,
+                            data = data,
+                            range = uiState.range,
+                            stepGoal = uiState.stepGoal,
+                            onRangeChange = ::changeRange,
+                            onOpenDay = { daySheet = it },
+                        )
+                    }
+                }
+                return@Column
+            }
             AnimatedContent(
                 targetState = uiState.destination,
                 modifier = Modifier.weight(1f),
@@ -224,7 +259,7 @@ fun FitbitAirApp(
                         onConnectGoogleHealth = onConnectGoogleHealth,
                         updater = updater,
                     )
-                    DashboardDestination.HOME -> DashboardContent(uiState.dashboard) { data ->
+                    DashboardDestination.HOME -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
                         HomeScreen(
                             data = data,
                             stepGoal = uiState.stepGoal,
@@ -232,13 +267,29 @@ fun FitbitAirApp(
                             onRangeChange = ::changeRange,
                             onStepGoalChange = ::updateStepGoal,
                             onOpenSleep = { select(DashboardDestination.SLEEP) },
+                            onOpenDetail = { detailMetric = it },
+                            onOpenDay = { daySheet = it },
                         )
                     }
-                    DashboardDestination.SLEEP -> DashboardContent(uiState.dashboard) { data ->
-                        SleepScreen(data, uiState.range, ::changeRange)
+                    DashboardDestination.SLEEP -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
+                        SleepScreen(
+                            data = data,
+                            range = uiState.range,
+                            onRangeChange = ::changeRange,
+                            onOpenDetail = { detailMetric = it },
+                            onOpenDay = { daySheet = it },
+                        )
                     }
-                    DashboardDestination.ACTIVITY -> DashboardContent(uiState.dashboard) { data ->
-                        ActivityScreen(data, uiState.stepGoal, uiState.range, ::changeRange, ::updateStepGoal)
+                    DashboardDestination.ACTIVITY -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
+                        ActivityScreen(
+                            data = data,
+                            stepGoal = uiState.stepGoal,
+                            range = uiState.range,
+                            onRangeChange = ::changeRange,
+                            onStepGoalChange = ::updateStepGoal,
+                            onOpenDetail = { detailMetric = it },
+                            onOpenDay = { daySheet = it },
+                        )
                     }
                     DashboardDestination.ASSISTANT -> AssistantScreen(
                         messages = chat,
@@ -298,16 +349,25 @@ fun FitbitAirApp(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun DashboardContent(
     state: DashboardState,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     content: @Composable (DashboardData) -> Unit,
 ) {
-    when (state) {
-        DashboardState.Loading -> LoadingScreen()
-        DashboardState.Empty -> EmptyScreen()
-        is DashboardState.Error -> ErrorScreen(state.message)
-        is DashboardState.Ready -> content(state.data)
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        when (state) {
+            DashboardState.Loading -> LoadingScreen()
+            DashboardState.Empty -> EmptyScreen(onRefresh)
+            is DashboardState.Error -> ErrorScreen(state.message, onRefresh)
+            is DashboardState.Ready -> content(state.data)
+        }
     }
 }
 
@@ -365,38 +425,38 @@ private fun LoadingScreen() {
 }
 
 @Composable
-private fun EmptyScreen() {
+private fun EmptyScreen(onRetry: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(12.dp))
             Text("Todavía no hay datos", style = MaterialTheme.typography.titleLarge)
             Text(
-                "Conecta Google Health para consultar tus métricas.",
+                "Conecta Google Health en Ajustes o desliza hacia abajo para volver a consultar.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            androidx.compose.material3.TextButton(onClick = onRetry) { Text("Volver a consultar") }
         }
     }
 }
 
 @Composable
-private fun ErrorScreen(message: String) {
+private fun ErrorScreen(message: String, onRetry: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("No se pudieron cargar los datos", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(8.dp))
             Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.material3.Button(onClick = onRetry) { Text("Reintentar") }
         }
     }
 }

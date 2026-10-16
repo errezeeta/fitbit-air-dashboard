@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.javier.fitbitair.domain.DashboardData
 import com.javier.fitbitair.domain.DailySteps
+import com.javier.fitbitair.domain.MetricKind
 import com.javier.fitbitair.domain.SleepSummary
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -76,6 +77,8 @@ fun HomeScreen(
     onRangeChange: (TrendRange) -> Unit,
     onOpenSleep: () -> Unit,
     onStepGoalChange: (Int) -> Unit,
+    onOpenDetail: (MetricKind) -> Unit = {},
+    onOpenDay: (LocalDate) -> Unit = {},
 ) {
     var showGoalDialog by remember { mutableStateOf(false) }
     Column(
@@ -108,14 +111,19 @@ fun HomeScreen(
             )
         }
 
-        DistanceCard(meters = data.distanceTodayMeters, modifier = Modifier.fillMaxWidth())
+        DistanceCard(
+            meters = data.distanceTodayMeters,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { onOpenDetail(MetricKind.DISTANCE) },
+        )
 
         TrendPanel(
             title = if (range == TrendRange.WEEK) "Pasos esta semana" else "Pasos últimos 30 días",
             range = range,
             onRangeChange = onRangeChange,
+            onOpenDetail = { onOpenDetail(MetricKind.STEPS) },
         ) {
-            StepsBarChart(data.stepsTrend)
+            StepsBarChart(data.stepsTrend, onOpenDay = onOpenDay)
         }
 
     }
@@ -133,7 +141,13 @@ fun HomeScreen(
 }
 
 @Composable
-fun SleepScreen(data: DashboardData, range: TrendRange, onRangeChange: (TrendRange) -> Unit) {
+fun SleepScreen(
+    data: DashboardData,
+    range: TrendRange,
+    onRangeChange: (TrendRange) -> Unit,
+    onOpenDetail: (MetricKind) -> Unit = {},
+    onOpenDay: (LocalDate) -> Unit = {},
+) {
     val efficiency = sleepEfficiencyPercent(data.sleep.asleepMinutes, data.sleep.inBedMinutes)
     Column(
         modifier = Modifier
@@ -148,13 +162,13 @@ fun SleepScreen(data: DashboardData, range: TrendRange, onRangeChange: (TrendRan
             StatCard("Eficiencia*", efficiency?.let { "$it%" } ?: "—", "cálculo de la app", Modifier.weight(1f))
             StatCard("Sueño profundo", formatDuration(data.sleep.stages.firstOrNull { it.kind == SleepStageKind.DEEP }?.minutes ?: 0), "fase registrada", Modifier.weight(1f))
         }
-        TrendPanel("Duración del sueño", range, onRangeChange) {
-            SleepTrendChart(
-                values = data.sleepTrend.map { it.asleepMinutes },
-                axisLabels = data.sleepTrend.indices.map { index ->
-                    chartLabel(index, range, data.sleepTrend.size)
-                },
-            )
+        TrendPanel(
+            "Duración del sueño",
+            range,
+            onRangeChange,
+            onOpenDetail = { onOpenDetail(MetricKind.SLEEP) },
+        ) {
+            SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
         }
         InfoNote("*La eficiencia es un cálculo propio (tiempo dormido ÷ tiempo en cama). No es el Sleep Score de Fitbit.")
     }
@@ -167,6 +181,8 @@ fun ActivityScreen(
     range: TrendRange,
     onRangeChange: (TrendRange) -> Unit,
     onStepGoalChange: (Int) -> Unit,
+    onOpenDetail: (MetricKind) -> Unit = {},
+    onOpenDay: (LocalDate) -> Unit = {},
 ) {
     var showGoalDialog by remember { mutableStateOf(false) }
     Column(
@@ -177,17 +193,31 @@ fun ActivityScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         ScreenHeading("MOVIMIENTO", "Actividad", "Pasos, distancia y pulso en reposo")
-        StepsGoalCard(data.stepsToday, stepGoal, onEdit = { showGoalDialog = true })
-        DistanceCard(meters = data.distanceTodayMeters, modifier = Modifier.fillMaxWidth())
-        TrendPanel("Pasos por día", range, onRangeChange) {
-            StepsBarChart(data.stepsTrend)
+        StepsGoalCard(data.stepsToday, stepGoal, onEdit = { showGoalDialog = true }, onClick = { onOpenDetail(MetricKind.STEPS) })
+        DistanceCard(
+            meters = data.distanceTodayMeters,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { onOpenDetail(MetricKind.DISTANCE) },
+        )
+        TrendPanel(
+            "Pasos por día",
+            range,
+            onRangeChange,
+            onOpenDetail = { onOpenDetail(MetricKind.STEPS) },
+        ) {
+            StepsBarChart(data.stepsTrend, onOpenDay = onOpenDay)
         }
         if (data.distanceTrend.isNotEmpty()) {
-            TrendPanel("Distancia por día", range, onRangeChange = {}) {
-                DistanceBarChart(data.distanceTrend)
+            TrendPanel(
+                "Distancia por día",
+                range,
+                onRangeChange = {},
+                onOpenDetail = { onOpenDetail(MetricKind.DISTANCE) },
+            ) {
+                DistanceBarChart(data.distanceTrend, onOpenDay = onOpenDay)
             }
         }
-        RestingHeartDetail(data)
+        RestingHeartDetail(data, onOpenDetail = { onOpenDetail(MetricKind.HEART) }, onOpenDay = onOpenDay)
         Text(
             "Lecturas del periodo seleccionado",
             style = MaterialTheme.typography.labelSmall,
@@ -238,10 +268,10 @@ private fun SleepHeroCard(sleep: SleepSummary, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun DistanceCard(meters: Int, modifier: Modifier = Modifier) {
+private fun DistanceCard(meters: Int, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     if (meters <= 0) return
     Card(
-        modifier = modifier,
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.86f),
@@ -297,8 +327,8 @@ private fun StepsMetricCard(steps: Int, goal: Int, modifier: Modifier, onEditGoa
 }
 
 @Composable
-private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit) {
-    ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit, onClick: () -> Unit = {}) {
+    ElevatedCard(shape = RoundedCornerShape(28.dp), modifier = Modifier.clickable(onClick = onClick)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -352,9 +382,13 @@ private fun RestingHeartCard(current: Int, previous: Int?, modifier: Modifier, o
 }
 
 @Composable
-private fun RestingHeartDetail(data: DashboardData) {
+private fun RestingHeartDetail(
+    data: DashboardData,
+    onOpenDetail: () -> Unit = {},
+    onOpenDay: (LocalDate) -> Unit = {},
+) {
     val current = data.restingHeartRate.takeIf { it > 0 }
-    ElevatedCard(shape = RoundedCornerShape(26.dp)) {
+    ElevatedCard(shape = RoundedCornerShape(26.dp), modifier = Modifier.clickable(onClick = onOpenDetail)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column {
@@ -373,7 +407,7 @@ private fun RestingHeartDetail(data: DashboardData) {
                     }
                 }
             }
-            HeartRateSparkline(data.heartRateTrend, Modifier.fillMaxWidth())
+            HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay, modifier = Modifier.fillMaxWidth())
             Text("Lectura informativa · no es una evaluación médica", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -384,12 +418,13 @@ private fun TrendPanel(
     title: String,
     range: TrendRange,
     onRangeChange: (TrendRange) -> Unit,
+    onOpenDetail: (() -> Unit)? = null,
     chart: @Composable () -> Unit,
 ) {
     ElevatedCard(shape = RoundedCornerShape(26.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text("TENDENCIA", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -404,6 +439,9 @@ private fun TrendPanel(
                 }
             }
             chart()
+            onOpenDetail?.let { open ->
+                TextButtonLabel("Ver detalle del periodo →", open)
+            }
         }
     }
 }
@@ -468,15 +506,6 @@ private fun InfoNote(text: String) {
 private fun formatDuration(minutes: Int): String {
     if (minutes <= 0) return "—"
     return "${minutes / 60} h ${minutes % 60} min"
-}
-
-private fun chartLabel(index: Int, range: TrendRange, count: Int): String = if (range == TrendRange.WEEK) {
-    listOf("L", "M", "X", "J", "V", "S", "D").getOrElse(index) { "" }
-} else if (count <= 12) {
-    listOf("1", "4", "7", "10", "13", "16", "19", "22", "25", "28", "30").getOrElse(index) { "" }
-} else {
-    val date = LocalDate.now().minusDays((count - 1 - index).toLong())
-    if (index % 5 == 0 || index == count - 1) date.dayOfMonth.toString() else ""
 }
 
 private fun todayLabel(): String = LocalDate.now()

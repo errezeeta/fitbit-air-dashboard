@@ -42,8 +42,14 @@ object BackendDashboardMapper {
                     date = date,
                 )
             },
-            sleepTrend = sleepElements.mapNotNull { element ->
-                element.objectOrNull()?.let(::mapSleep)
+            sleepTrend = sleepElements.mapIndexedNotNull { index, element ->
+                val point = element.objectOrNull() ?: return@mapIndexedNotNull null
+                val date = point.stringValue("date").toLocalDateOrNull()
+                DailySleep(
+                    date = date,
+                    label = date?.let { chartAxisLabel(it, range, index, sleepElements.size) } ?: "",
+                    summary = mapSleep(point),
+                )
             },
             heartRateTrend = heartRateElements.mapIndexedNotNull { index, element ->
                 val point = element.objectOrNull() ?: return@mapIndexedNotNull null

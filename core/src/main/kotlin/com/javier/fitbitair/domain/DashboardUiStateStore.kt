@@ -13,6 +13,8 @@ data class DashboardUiState(
     val range: TrendRange = TrendRange.WEEK,
     val dashboard: DashboardState = DashboardState.Loading,
     val stepGoal: Int = 8_000,
+    /** True while a reload is in flight, so the UI can spin without blanking. */
+    val refreshing: Boolean = false,
 )
 
 /** Small UI state holder; the Compose layer renders this state and supplies user events. */
@@ -40,7 +42,7 @@ class DashboardUiStateStore {
         if (dashboard is DashboardState.Ready) {
             lastGoodByRange[state.range] = dashboard
         }
-        state = state.copy(dashboard = dashboard)
+        state = state.copy(dashboard = dashboard, refreshing = false)
     }
 
     /**
@@ -52,6 +54,7 @@ class DashboardUiStateStore {
         if (state.dashboard !is DashboardState.Ready) {
             state = state.copy(dashboard = replacement)
         }
+        state = state.copy(refreshing = true)
     }
 
     fun changeRange(range: TrendRange) {
