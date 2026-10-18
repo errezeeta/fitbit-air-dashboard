@@ -5,7 +5,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val backendBaseUrl = providers.gradleProperty("backendBaseUrl").orElse("").get()
+val backendBaseUrl = providers.gradleProperty("backendBaseUrl")
+    .orElse("https://fitbit-air-backend-i3pz5b53aq-no.a.run.app")
+    .get()
+    .trim()
+// An empty base URL is how a release shipped showing sample data: the app fell
+// back to the fake repository without saying anything. Fail the build instead.
+check(backendBaseUrl.startsWith("https://")) {
+    "backendBaseUrl must be an https URL, got '$backendBaseUrl'"
+}
 val escapedBackendBaseUrl = backendBaseUrl.replace("\\", "\\\\").replace("\"", "\\\"")
 val repoOwner = "errezeeta"
 val repoName = "fitbit-air-dashboard"
@@ -49,8 +57,8 @@ android {
         applicationId = "com.javier.fitbitair"
         minSdk = 31
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.8.0"
+        versionCode = 11
+        versionName = "0.8.1"
         buildConfigField("String", "BACKEND_BASE_URL", "\"$escapedBackendBaseUrl\"")
         buildConfigField("String", "UPDATE_REPO", "\"https://api.github.com/repos/$repoOwner/$repoName/releases/latest\"")
         buildConfigField("int", "APP_VERSION_CODE", "$versionCode")
