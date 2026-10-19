@@ -17,6 +17,26 @@ class PendingQuestion:
     claimed_at: float | None = None
 
 
+@dataclass
+class AssistantReply:
+    """What the bridge sends back: prose, plus whatever it decided to attach.
+
+    `chart` and `suggestions` are optional because the agent chooses when they
+    help; a plain-text answer is always valid.
+    """
+
+    answer: str
+    chart: dict | None = None
+    suggestions: list[str] | None = None
+
+    def to_payload(self) -> dict:
+        return {
+            "answer": self.answer,
+            "chart": self.chart,
+            "suggestions": self.suggestions or [],
+        }
+
+
 class AssistantQueue:
     """Hand-off between a Cloud Run request and the bridge on the Hermes host.
 
@@ -33,7 +53,7 @@ class AssistantQueue:
     ) -> None:
         self._lock = threading.Lock()
         self._jobs: dict[str, PendingQuestion] = {}
-        self._answers: dict[str, tuple[float, str]] = {}
+        self._answers: dict[str, tuple[float, AssistantReply]] = {}
         self._job_ttl_seconds = job_ttl_seconds
         self._abandoned_after_seconds = abandoned_after_seconds
 
@@ -84,15 +104,25 @@ class AssistantQueue:
                 }
         return None
 
-    def answer(self, job_id: str, answer: str) -> bool:
+    def answer(
+        self,
+        job_id: str,
+        answer: str,
+        *,
+        chart: dict | None = None,
+        suggestions: list[str] | None = None,
+    ) -> bool:
         with self._lock:
             if job_id not in self._jobs:
                 return False
-            self._answers[job_id] = (time.time() + self._job_ttl_seconds, answer)
+            self._answers[job_id] = (
+                time.time() + self._job_ttl_seconds,
+                AssistantReply(answer=answer, chart=chart, suggestions=suggestions),
+            )
             self._jobs.pop(job_id, None)
             return True
 
-    def wait(self, job_id: str, timeout: float) -> str | None:
+    def wait(self, job_id: str, timeout: float) -> AssistantReply | None:
         deadline = time.time() + timeout
         while time.time() < deadline:
             with self._lock:

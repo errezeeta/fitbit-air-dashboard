@@ -54,8 +54,47 @@ class AssistantQueueTest(unittest.TestCase):
         self.assertIsNone(queue.claim())
 
         self.assertTrue(queue.answer(job_id, "Dormiste 7 h 30 min."))
-        self.assertEqual("Dormiste 7 h 30 min.", queue.wait(job_id, timeout=2))
+        self.assertEqual("Dormiste 7 h 30 min.", queue.wait(job_id, timeout=2).answer)
         self.assertFalse(queue.answer("unknown-job", "nada"))
+
+    def test_an_answer_carries_the_optional_chart_and_chips(self):
+        queue = AssistantQueue()
+        job_id = queue.enqueue(
+            question="¿Cómo dormí?", range_name="week", timezone="UTC", dashboard={}
+        )
+        queue.claim()
+
+        queue.answer(
+            job_id,
+            "Dormiste 7 h 30 min de media.",
+            chart={
+                "kind": "bars",
+                "title": "Horas de sueño",
+                "unit": "min",
+                "points": [{"label": "L", "value": 430, "date": "2026-10-12"}],
+                "goal": None,
+            },
+            suggestions=["¿Y la semana pasada?", "¿Cuál fue mi mejor noche?"],
+        )
+
+        reply = queue.wait(job_id, timeout=2)
+        self.assertEqual("Dormiste 7 h 30 min de media.", reply.answer)
+        self.assertEqual("bars", reply.chart["kind"])
+        self.assertEqual(2, len(reply.suggestions))
+        self.assertEqual(
+            {"answer", "chart", "suggestions"},
+            set(reply.to_payload()),
+        )
+
+    def test_a_plain_answer_has_no_chart_and_empty_chips(self):
+        queue = AssistantQueue()
+        job_id = queue.enqueue(question="hola", range_name="week", timezone="UTC", dashboard={})
+        queue.claim()
+        queue.answer(job_id, "Sin gráfico.")
+
+        reply = queue.wait(job_id, timeout=2)
+        self.assertIsNone(reply.chart)
+        self.assertEqual([], reply.to_payload()["suggestions"])
 
     def test_wait_gives_up_when_nobody_answers(self):
         queue = AssistantQueue()
@@ -130,7 +169,21 @@ class BridgeEndpointTest(unittest.IsolatedAsyncioTestCase):
                     accepted = await self.client.post(
                         "/bridge/answer",
                         headers={"X-Bridge-Key": BRIDGE_KEY},
-                        json={"jobId": job["jobId"], "answer": "Dormiste 7 h 30 min."},
+                        json={
+                            "jobId": job["jobId"],
+                            "answer": "Dormiste 7 h 30 min.",
+                            "chart": {
+                                "kind": "bars",
+                                "title": "Sueño por noche",
+                                "unit": "min",
+                                "points": [
+                                    {"label": "L", "value": 430, "date": "2026-10-12"},
+                                    {"label": "M", "value": 470, "date": "2026-10-13"},
+                                ],
+                                "goal": None,
+                            },
+                            "suggestions": ["¿Y la semana pasada?"],
+                        },
                     )
                     return "answered" if accepted.json()["accepted"] else "rejected"
                 await asyncio.sleep(0.02)
@@ -146,8 +199,50 @@ class BridgeEndpointTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("answered", outcome)
         self.assertEqual(200, response.status_code)
-        self.assertEqual("Dormiste 7 h 30 min.", response.json()["answer"])
+        payload = response.json()
+        self.assertEqual("Dormiste 7 h 30 min.", payload["answer"])
+        self.assertEqual("bars", payload["chart"]["kind"])
+        self.assertEqual(2, len(payload["chart"]["points"]))
+        self.assertEqual(["¿Y la semana pasada?"], payload["suggestions"])
         self.assertNotIn(BRIDGE_KEY, response.text)
+
+    async def test_a_malformed_chart_never_reaches_the_app(self):
+        session = _session_token("server-only-session-secret")
+
+        async def answer_worker() -> None:
+            for _ in range(200):
+                claim = await self.client.post(
+                    "/bridge/claim", headers={"X-Bridge-Key": BRIDGE_KEY}
+                )
+                job = claim.json()["job"]
+                if job:
+                    await self.client.post(
+                        "/bridge/answer",
+                        headers={"X-Bridge-Key": BRIDGE_KEY},
+                        json={
+                            "jobId": job["jobId"],
+                            "answer": "Sin gráfico válido.",
+                            # 40 points and a non-numeric value: rejected whole.
+                            "chart": {
+                                "kind": "pie",
+                                "points": [{"label": "L", "value": "muchos"}] * 40,
+                            },
+                        },
+                    )
+                    return
+                await asyncio.sleep(0.02)
+
+        worker = asyncio.create_task(answer_worker())
+        response = await self.client.post(
+            "/api/assistant",
+            headers={"Authorization": f"Bearer {session}"},
+            json={"question": "¿Cómo dormí?", "range": "week", "timezone": "Europe/Madrid"},
+        )
+        await worker
+
+        self.assertEqual(200, response.status_code)
+        self.assertIsNone(response.json()["chart"])
+        self.assertEqual("Sin gráfico válido.", response.json()["answer"])
 
     async def test_the_self_test_endpoint_queues_without_an_app_session(self):
         queued = await self.client.post(

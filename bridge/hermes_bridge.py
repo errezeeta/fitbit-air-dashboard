@@ -20,6 +20,11 @@ import time
 import urllib.error
 import urllib.request
 
+# The reply-parsing contract lives with the backend so both paths agree on it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from backend.app.assistant_reply import ENVELOPE_INSTRUCTIONS, parse_reply  # noqa: E402
+
 BACKEND_URL = os.environ.get(
     "FITBIT_BACKEND_URL",
     "https://fitbit-air-backend-i3pz5b53aq-na.a.run.app",
@@ -43,6 +48,8 @@ Resumen de mis métricas ({range_name}, zona horaria {timezone}) en JSON:
 {dashboard}
 """
 
+PROMPT = PROMPT_TEMPLATE + "\n" + ENVELOPE_INSTRUCTIONS
+
 
 def read_key() -> str:
     with open(KEY_FILE, encoding="utf-8") as handle:
@@ -65,8 +72,9 @@ def call(path: str, payload: dict | None, key: str, method: str = "POST") -> dic
         return json.loads(response.read().decode("utf-8") or "{}")
 
 
-def ask_hermes(job: dict) -> str:
-    prompt = PROMPT_TEMPLATE.format(
+def ask_hermes(job: dict):
+    """Run one agent turn and return the parsed reply (prose + optional extras)."""
+    prompt = PROMPT.format(
         question=job["question"],
         range_name=job.get("range", "week"),
         timezone=job.get("timezone", "UTC"),
@@ -91,7 +99,7 @@ def ask_hermes(job: dict) -> str:
     cleaned = "\n".join(lines).strip()
     if not cleaned:
         raise RuntimeError("hermes returned an empty answer")
-    return cleaned
+    return parse_reply(cleaned)
 
 
 def main() -> int:
@@ -116,20 +124,35 @@ def main() -> int:
 
         started = time.time()
         try:
-            answer = ask_hermes(job)
+            reply = ask_hermes(job)
+            extras = []
+            if reply.chart:
+                extras.append(f"chart {reply.chart['kind']}×{len(reply.chart['points'])}")
+            if reply.suggestions:
+                extras.append(f"{len(reply.suggestions)} sugerencias")
             print(
-                f"respondida {job['jobId'][:8]} en {time.time() - started:.1f}s",
+                f"respondida {job['jobId'][:8]} en {time.time() - started:.1f}s"
+                + (f" ({', '.join(extras)})" if extras else ""),
                 flush=True,
             )
         except Exception as error:  # noqa: BLE001 - el puente nunca debe morir
-            answer = (
+            reply = parse_reply(
                 "No he podido generar la respuesta en este momento. "
                 "Inténtalo de nuevo en unos minutos."
             )
             print(f"error al responder {job['jobId'][:8]}: {error}", flush=True)
 
         try:
-            call("/bridge/answer", {"jobId": job["jobId"], "answer": answer}, key)
+            call(
+                "/bridge/answer",
+                {
+                    "jobId": job["jobId"],
+                    "answer": reply.answer,
+                    "chart": reply.chart,
+                    "suggestions": reply.suggestions,
+                },
+                key,
+            )
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as error:
             print(f"no se pudo entregar la respuesta: {error}", flush=True)
 
