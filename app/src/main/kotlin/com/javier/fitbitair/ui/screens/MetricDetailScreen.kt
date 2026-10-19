@@ -144,9 +144,10 @@ fun MetricDetailScreen(
             }
         }
 
-        StatGrid(kind, stats, data, stepGoal)
-
-        RecentDays(kind, points, onOpenDay)
+        if (points.isNotEmpty()) {
+            StatGrid(kind, stats, data, stepGoal)
+            RecentDays(kind, points, onOpenDay)
+        }
 
         Spacer(Modifier.height(10.dp))
     }

@@ -15,8 +15,10 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import queue
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -91,19 +93,39 @@ def call(path: str, payload: dict | None, key: str, method: str = "POST") -> dic
         return json.loads(response.read().decode("utf-8") or "{}")
 
 
-def ask_hermes(job: dict, on_delta=None, on_stage=None):
-    """Run one agent turn, forwarding the prose and the step it is on.
+THINKING_PHASES = (
+    (0.0, "Preparando el análisis"),
+    (2.5, "Analizando el resumen"),
+    (6.0, "Dando forma a la respuesta"),
+)
 
-    The CLI's stream-json mode emits a `text` event per token batch, so the
-    caller can relay readable text before the turn ends. Anything from the
-    delimiter onwards is metadata and is never sent as a delta.
+
+def thinking_stage(elapsed_seconds: float, detail: str) -> dict:
+    """A truthful, small progression while Hermes is reasoning before text."""
+    elapsed = max(0.0, elapsed_seconds)
+    label = THINKING_PHASES[0][1]
+    for threshold, candidate in THINKING_PHASES:
+        if elapsed < threshold:
+            break
+        label = candidate
+    return {"stage": "pensando", "label": label, "detail": detail}
+
+
+def ask_hermes(job: dict, on_delta=None, on_stage=None):
+    """Run one agent turn and stream text plus honest thinking phases.
+
+    Hermes `stream-json` has real `system` and `text` events. Between those
+    milestones it cannot expose private chain-of-thought, so the progress labels
+    describe the actual elapsed analysis phase and keep the health-data context
+    visible; they never pretend to be token-level reasoning.
     """
     prompt = build_prompt(job)
     environment = dict(os.environ)
     environment["HERMES_HOME"] = HERMES_HOME
-    deadline = time.time() + ANSWER_TIMEOUT
+    deadline = time.monotonic() + ANSWER_TIMEOUT
+    detail = dashboard_detail(job.get("dashboard", {}), job.get("range", "week"))
     if on_stage is not None:
-        on_stage("arranque", "Abriendo el asistente", None)
+        on_stage("arranque", "Conectando con Hermes", "Preparando la consulta")
     process = subprocess.Popen(
         [HERMES_BIN, "chat", "-q", prompt, "-Q", "--format", "stream-json"],
         stdout=subprocess.PIPE,
@@ -114,15 +136,53 @@ def ask_hermes(job: dict, on_delta=None, on_stage=None):
         bufsize=1,
     )
 
+    # Drain the pipe on a reader thread so the main loop can update the stage
+    # during the model's quiet thinking time, rather than blocking on readline.
+    output: queue.Queue[str | None] = queue.Queue()
+
+    def read_output() -> None:
+        try:
+            if process.stdout is not None:
+                for item in process.stdout:
+                    output.put(item)
+        finally:
+            output.put(None)
+
+    threading.Thread(target=read_output, name="hermes-stream-reader", daemon=True).start()
+
     raw = ""
     shown = 0
     exit_code = 0
-    read_announced = False
+    model_ready_at: float | None = None
+    latest_phase: str | None = None
+    text_started = False
+    eof = False
     try:
-        for line in process.stdout:  # type: ignore[union-attr]
-            if time.time() > deadline:
+        while not eof:
+            now = time.monotonic()
+            if now > deadline:
                 process.kill()
                 raise RuntimeError("hermes did not finish in time")
+            try:
+                line = output.get(timeout=min(0.35, max(0.01, deadline - now)))
+            except queue.Empty:
+                line = ""
+
+            if line is None:
+                eof = True
+                continue
+
+            if not line:
+                # Before the first visible token, advance through calm status
+                # phases instead of leaving "Conectando" on screen for the
+                # entire model latency.
+                if model_ready_at is not None and not text_started and on_stage is not None:
+                    stage = thinking_stage(time.monotonic() - model_ready_at, detail)
+                    if stage["label"] != latest_phase:
+                        latest_phase = stage["label"]
+                        on_stage(stage["stage"], stage["label"], stage["detail"])
+                continue
+
             line = line.strip()
             if not line or line.startswith("session_id:"):
                 continue
@@ -130,24 +190,30 @@ def ask_hermes(job: dict, on_delta=None, on_stage=None):
                 event = json.loads(line)
             except ValueError:
                 continue
+
+            if event.get("type") == "system":
+                if model_ready_at is None:
+                    model_ready_at = time.monotonic()
+                    stage = thinking_stage(0, detail)
+                    latest_phase = stage["label"]
+                    if on_stage is not None:
+                        on_stage(stage["stage"], stage["label"], stage["detail"])
+                continue
+
             if event.get("type") != "text" or not isinstance(event.get("text"), str):
                 continue
-            if not read_announced and on_stage is not None:
-                read_announced = True
-                # The long wait is the model working: say so with the numbers
-                # it was actually given.
-                on_stage(
-                    "pensando",
-                    "Razonando sobre tus datos",
-                    dashboard_detail(job.get("dashboard", {}), job.get("range", "week")),
-                )
             raw += event["text"]
             if on_delta is None:
                 continue
             visible = streamable_prefix(raw)
             if len(visible) > shown:
+                if not text_started:
+                    text_started = True
+                    if on_stage is not None:
+                        on_stage("escribiendo", "Redactando la respuesta", "Respuesta en directo")
                 on_delta(visible[shown:])
                 shown = len(visible)
+
         exit_code = process.wait(timeout=30)
     finally:
         if process.poll() is None:
