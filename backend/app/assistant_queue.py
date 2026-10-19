@@ -55,6 +55,7 @@ class AssistantQueue:
         self._jobs: dict[str, PendingQuestion] = {}
         self._answers: dict[str, tuple[float, AssistantReply]] = {}
         self._chunks: dict[str, tuple[float, str]] = {}
+        self._stages: dict[str, tuple[float, dict]] = {}
         self._job_ttl_seconds = job_ttl_seconds
         self._abandoned_after_seconds = abandoned_after_seconds
 
@@ -153,16 +154,26 @@ class AssistantQueue:
             self._chunks[job_id] = (expires_at, current + text)
             return True
 
+    def set_stage(self, job_id: str, stage: dict) -> bool:
+        """The bridge reporting what it is doing, e.g. building a 7-point chart."""
+        with self._lock:
+            if job_id not in self._jobs:
+                return False
+            self._stages[job_id] = (time.time() + self._job_ttl_seconds, stage)
+            return True
+
     def stream_state(self, job_id: str) -> dict:
         """What the waiting HTTP request needs: is it claimed, and how much text."""
         with self._lock:
             job = self._jobs.get(job_id)
             stored_answer = self._answers.get(job_id)
             chunk = self._chunks.get(job_id)
+            stage = self._stages.get(job_id)
         return {
             "claimed": job is not None and job.claimed_at is not None,
             "partial": "" if chunk is None else chunk[1],
             "reply": None if stored_answer is None else stored_answer[1],
+            "stage": None if stage is None else stage[1],
             "gone": job is None and stored_answer is None,
         }
 
@@ -176,7 +187,9 @@ class AssistantQueue:
         for job_id in expired:
             self._jobs.pop(job_id, None)
             self._chunks.pop(job_id, None)
+            self._stages.pop(job_id, None)
         for job_id, (expires_at, _) in list(self._answers.items()):
             if expires_at < moment:
                 self._answers.pop(job_id, None)
                 self._chunks.pop(job_id, None)
+                self._stages.pop(job_id, None)

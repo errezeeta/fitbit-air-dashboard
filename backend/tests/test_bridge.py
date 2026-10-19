@@ -299,6 +299,11 @@ class BridgeEndpointTest(unittest.IsolatedAsyncioTestCase):
         ]
         stages = [event["stage"] for event in events if "stage" in event]
         self.assertEqual(["datos", "pensando", "escribiendo", "grafico"], stages)
+        # The progress line says what is being read, not just "loading".
+        thinking = next(event for event in events if event.get("stage") == "pensando")
+        self.assertIn("días", thinking["detail"])
+        chart_stage = next(event for event in events if event.get("stage") == "grafico")
+        self.assertEqual("2 puntos", chart_stage["detail"])
         streamed = "".join(event["delta"] for event in events if "delta" in event)
         self.assertEqual("Dormiste 7 h 30 min de media.", streamed)
         done = [event["done"] for event in events if "done" in event][-1]

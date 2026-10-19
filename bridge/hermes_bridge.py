@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.app.assistant_reply import (
     ENVELOPE_INSTRUCTIONS,
+    dashboard_detail,
     parse_streamed,
     streamable_prefix,
 )  # noqa: E402
@@ -90,8 +91,8 @@ def call(path: str, payload: dict | None, key: str, method: str = "POST") -> dic
         return json.loads(response.read().decode("utf-8") or "{}")
 
 
-def ask_hermes(job: dict, on_delta=None):
-    """Run one agent turn, forwarding the prose as it is written.
+def ask_hermes(job: dict, on_delta=None, on_stage=None):
+    """Run one agent turn, forwarding the prose and the step it is on.
 
     The CLI's stream-json mode emits a `text` event per token batch, so the
     caller can relay readable text before the turn ends. Anything from the
@@ -101,6 +102,8 @@ def ask_hermes(job: dict, on_delta=None):
     environment = dict(os.environ)
     environment["HERMES_HOME"] = HERMES_HOME
     deadline = time.time() + ANSWER_TIMEOUT
+    if on_stage is not None:
+        on_stage("arranque", "Abriendo el asistente", None)
     process = subprocess.Popen(
         [HERMES_BIN, "chat", "-q", prompt, "-Q", "--format", "stream-json"],
         stdout=subprocess.PIPE,
@@ -114,6 +117,7 @@ def ask_hermes(job: dict, on_delta=None):
     raw = ""
     shown = 0
     exit_code = 0
+    read_announced = False
     try:
         for line in process.stdout:  # type: ignore[union-attr]
             if time.time() > deadline:
@@ -128,6 +132,15 @@ def ask_hermes(job: dict, on_delta=None):
                 continue
             if event.get("type") != "text" or not isinstance(event.get("text"), str):
                 continue
+            if not read_announced and on_stage is not None:
+                read_announced = True
+                # The long wait is the model working: say so with the numbers
+                # it was actually given.
+                on_stage(
+                    "pensando",
+                    "Razonando sobre tus datos",
+                    dashboard_detail(job.get("dashboard", {}), job.get("range", "week")),
+                )
             raw += event["text"]
             if on_delta is None:
                 continue
@@ -147,6 +160,8 @@ def ask_hermes(job: dict, on_delta=None):
     reply = parse_streamed(raw)
     if not reply.answer.strip():
         raise RuntimeError("hermes returned an empty answer")
+    if reply.chart and on_stage is not None:
+        on_stage("grafico", "Dibujando el gráfico", f"{len(reply.chart['points'])} puntos")
     return reply
 
 
@@ -200,8 +215,17 @@ def main() -> int:
             except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as error:
                 print(f"no se pudo enviar un trozo: {error}", flush=True)
 
+        def report_stage(stage: str, label: str, detail: str | None) -> None:
+            payload = {"jobId": job["jobId"], "stage": stage, "label": label}
+            if detail:
+                payload["detail"] = detail
+            try:
+                call("/bridge/stage", payload, key)
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
+                pass  # progress is nice to have; the answer is what matters
+
         try:
-            reply = ask_hermes(job, on_delta=flush_delta)
+            reply = ask_hermes(job, on_delta=flush_delta, on_stage=report_stage)
             extras = []
             if reply.chart:
                 extras.append(f"chart {reply.chart['kind']}×{len(reply.chart['points'])}")

@@ -73,6 +73,24 @@ def parse_reply(raw: str) -> AssistantReply:
     )
 
 
+def dashboard_detail(dashboard: dict, range_name: str) -> str:
+    """What was actually read, so the app can say it instead of "cargando"."""
+    present = [
+        name
+        for key, name in (
+            ("stepsTrend", "pasos"),
+            ("distanceTrend", "distancia"),
+            ("sleepTrend", "sueño"),
+            ("heartRateTrend", "pulso"),
+        )
+        if dashboard.get(key)
+    ]
+    days = "7 días" if range_name == "week" else "30 días"
+    if not present:
+        return days
+    return f"{days} · {', '.join(present)}"
+
+
 def parse_streamed(raw: str) -> AssistantReply:
     """Parse the streamed layout: prose, a delimiter line, then the extras.
 

@@ -43,6 +43,7 @@ import com.javier.fitbitair.domain.sleepEfficiencyPercent
 import com.javier.fitbitair.domain.sleepPoints
 import com.javier.fitbitair.domain.stepPoints
 import com.javier.fitbitair.ui.components.DistanceBarChart
+import com.javier.fitbitair.ui.components.HeartRateDistribution
 import com.javier.fitbitair.ui.components.HeartRateSparkline
 import com.javier.fitbitair.ui.components.SleepTrendChart
 import com.javier.fitbitair.ui.components.SleepStagesChart
@@ -121,7 +122,10 @@ fun MetricDetailScreen(
                         SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
                         SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
                     }
-                    MetricKind.HEART -> HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay)
+                    MetricKind.HEART -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay)
+                        HeartRateDistribution(data.heartRateTrend.map { it.beatsPerMinute })
+                    }
                 }
                 Hint("Toca una barra para ver ese día · mantén pulsado para abrir su ficha")
             }
@@ -243,6 +247,26 @@ private fun StatGrid(
                 }
                 MetricKind.HEART -> {
                     StatLine("Rango del periodo", "${stats.worst?.value ?: 0} – ${stats.best?.value ?: 0} lpm")
+                    val readings = data.heartRateTrend.map { it.beatsPerMinute }
+                    TrendStats.variabilityPercent(readings)?.let { spread ->
+                        StatLine("Variabilidad", "±$spread %", "cuánto se mueve respecto a su media")
+                    }
+                    TrendStats.drift(readings)?.let { drift ->
+                        StatLine(
+                            "Tendencia",
+                            when (drift.direction) {
+                                TrendStats.Direction.RISING -> "subiendo ${drift.beatsPerMinute} lpm"
+                                TrendStats.Direction.FALLING -> "bajando ${drift.beatsPerMinute} lpm"
+                                TrendStats.Direction.STABLE -> "estable"
+                            },
+                            "segunda mitad del periodo frente a la primera",
+                        )
+                    }
+                    val average = stats.average
+                    if (average > 0) {
+                        val below = readings.count { it < average }
+                        StatLine("Días por debajo de su media", "$below de ${readings.size}")
+                    }
                 }
                 MetricKind.DISTANCE -> {
                     StatLine("Media por día activo", kind.formatValue(activeAverage(data)))

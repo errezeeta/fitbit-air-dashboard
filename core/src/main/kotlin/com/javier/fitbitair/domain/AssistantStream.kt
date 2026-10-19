@@ -7,7 +7,7 @@ import com.google.gson.JsonParser
 /** One event of the assistant's streamed answer. */
 sealed interface AssistantStreamEvent {
     /** What the agent is doing right now, for the progress line. */
-    data class Stage(val id: String, val label: String) : AssistantStreamEvent
+    data class Stage(val id: String, val label: String, val detail: String? = null) : AssistantStreamEvent
 
     /** A piece of the answer, ready to append to the bubble. */
     data class Delta(val text: String) : AssistantStreamEvent
@@ -28,7 +28,7 @@ object AssistantStreamParser {
             return AssistantStreamEvent.Delta(delta)
         }
         node.text("stage")?.let { stage ->
-            return AssistantStreamEvent.Stage(stage, node.text("label") ?: stage)
+            return AssistantStreamEvent.Stage(stage, node.text("label") ?: stage, node.text("detail"))
         }
         node.text("error")?.let { message -> return AssistantStreamEvent.Failure(message) }
         node["done"]?.takeIf { it.isJsonObject }?.asJsonObject?.let { payload ->

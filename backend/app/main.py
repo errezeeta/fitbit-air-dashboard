@@ -17,7 +17,12 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.app.assistant_queue import AssistantQueue, AssistantReply
-from backend.app.assistant_reply import normalize_chart, normalize_suggestions, parse_reply
+from backend.app.assistant_reply import (
+    dashboard_detail,
+    normalize_chart,
+    normalize_suggestions,
+    parse_reply,
+)
 from backend.app.auth_service import GoogleAuthService
 from backend.app.google_health import GoogleHealthClient
 from backend.app.hermes_client import HermesClient
@@ -102,6 +107,15 @@ class BridgeAnswerRequest(BaseModel):
     answer: str = Field(min_length=1, max_length=4000)
     chart: dict | None = None
     suggestions: list[str] | None = Field(default=None, max_length=6)
+
+
+class BridgeStageRequest(BaseModel):
+    """What the bridge is doing right now, for the progress line in the app."""
+
+    jobId: str = Field(min_length=1, max_length=64)
+    stage: str = Field(min_length=1, max_length=32)
+    label: str = Field(min_length=1, max_length=80)
+    detail: str | None = Field(default=None, max_length=120)
 
 
 class BridgeChunkRequest(BaseModel):
@@ -395,7 +409,14 @@ def create_app(
             raise HTTPException(status_code=400, detail="Timezone is invalid") from exc
 
         def events():
-            yield _sse_event({"stage": "datos", "label": "Recogiendo tus datos"})
+            yield _sse_event(
+                {
+                    "stage": "datos",
+                    "label": "Recogiendo tus datos",
+                    # The client uses this to count the seconds it has been waiting.
+                    "since": int(time.time() * 1000),
+                }
+            )
             try:
                 refresh_token = refresh_token_store.read_refresh_token()
                 client = health_client
@@ -419,7 +440,8 @@ def create_app(
             except RuntimeError:
                 yield _sse_event({"error": "No se pudieron leer tus datos de Google Health."})
                 return
-            yield _sse_event({"stage": "pensando", "label": "Pensando con tus métricas"})
+            # The next step is emitted by _assistant_stream, which knows what
+            # was actually read and can say it.
             for event in _assistant_stream(
                 question=request.question,
                 range_name=request.range,
@@ -469,6 +491,23 @@ def create_app(
             payload.answer,
             chart=normalize_chart(payload.chart),
             suggestions=normalize_suggestions(payload.suggestions),
+        )
+        return {"accepted": accepted}
+
+    @app.post("/bridge/stage")
+    def bridge_stage(
+        payload: BridgeStageRequest,
+        x_bridge_key: str | None = Header(default=None),
+    ) -> dict[str, bool]:
+        _require_bridge_key(x_bridge_key)
+        assert assistant_queue is not None
+        accepted = assistant_queue.set_stage(
+            payload.jobId,
+            {
+                "stage": payload.stage,
+                "label": payload.label,
+                "detail": payload.detail,
+            },
         )
         return {"accepted": accepted}
 
@@ -556,12 +595,19 @@ def _assistant_stream(
 
     The bridge writes the prose as the agent produces it and posts only the
     part worth showing, so a delta here is text the user can read, never raw
-    JSON in transit.
+    JSON in transit. Stages carry a `detail` so the progress line says what is
+    actually being read or built, not just "thinking".
     """
     if hermes_client is not None:
+        detail = dashboard_detail(dashboard, range_name)
+        yield {"stage": "pensando", "label": "Leyendo tus métricas", "detail": detail}
         reply = parse_reply(hermes_client.ask(question=question, dashboard=dashboard))
         if reply.chart:
-            yield {"stage": "grafico", "label": "Preparando el gráfico"}
+            yield {
+                "stage": "grafico",
+                "label": "Preparando el gráfico",
+                "detail": f"{len(reply.chart['points'])} puntos",
+            }
         yield {"delta": reply.answer}
         yield {"done": reply.to_payload()}
         return
@@ -580,14 +626,31 @@ def _assistant_stream(
     sent = 0
     announced_writing = False
     announced_chart = False
+    last_bridge_stage: dict | None = None
+    yield {
+        "stage": "pensando",
+        "label": "Leyendo tus métricas",
+        "detail": dashboard_detail(dashboard, range_name),
+    }
 
     while time.time() < deadline:
         state = assistant_queue.stream_state(job_id)
+
+        # Whatever the bridge reported (it knows the point count, for instance).
+        bridge_stage = state["stage"]
+        if bridge_stage and bridge_stage != last_bridge_stage:
+            last_bridge_stage = bridge_stage
+            if bridge_stage.get("stage") == "escribiendo":
+                announced_writing = True
+            if bridge_stage.get("stage") == "grafico":
+                announced_chart = True
+            yield bridge_stage
+
         partial = state["partial"]
         if len(partial) > sent:
             if not announced_writing:
                 announced_writing = True
-                yield {"stage": "escribiendo", "label": "Escribiendo la respuesta"}
+                yield {"stage": "escribiendo", "label": "Redactando la respuesta"}
             yield {"delta": partial[sent:]}
             sent = len(partial)
 
@@ -595,7 +658,11 @@ def _assistant_stream(
         if reply is not None:
             if reply.chart and not announced_chart:
                 announced_chart = True
-                yield {"stage": "grafico", "label": "Preparando el gráfico"}
+                yield {
+                    "stage": "grafico",
+                    "label": "Preparando el gráfico",
+                    "detail": f"{len(reply.chart['points'])} puntos",
+                }
             if sent == 0 and reply.answer:
                 # No chunks arrived (an old bridge, or a very short answer).
                 yield {"delta": reply.answer}

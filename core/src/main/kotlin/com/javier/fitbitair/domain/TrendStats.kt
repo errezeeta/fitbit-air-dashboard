@@ -24,6 +24,27 @@ data class SeriesStats(
  * screen can be tested without a device.
  */
 object TrendStats {
+    /** Which way the readings are going, second half against first half. */
+    enum class Direction { RISING, FALLING, STABLE }
+
+    data class Drift(val direction: Direction, val beatsPerMinute: Int)
+
+    fun drift(values: List<Int>, tolerance: Int = 2): Drift? {
+        if (values.size < 4) return null
+        val half = values.size / 2
+        val first = values.take(half).average()
+        val second = values.drop(half).average()
+        val delta = Math.round(second - first).toInt()
+        return Drift(
+            direction = when {
+                delta > tolerance -> Direction.RISING
+                delta < -tolerance -> Direction.FALLING
+                else -> Direction.STABLE
+            },
+            beatsPerMinute = kotlin.math.abs(delta),
+        )
+    }
+
     fun of(values: List<SeriesPoint>): SeriesStats {
         if (values.isEmpty()) {
             return SeriesStats(total = 0, average = 0.0, best = null, worst = null, days = 0)

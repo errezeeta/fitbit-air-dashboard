@@ -2,6 +2,8 @@ package com.javier.fitbitair.ui.screens
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -11,9 +13,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,15 +32,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -57,6 +66,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -80,6 +92,10 @@ sealed interface AssistantMessage {
         val stage: String = "",
         /** Human wording of that step, shown next to the animated indicator. */
         val stageLabel: String = "",
+        /** Concrete backing for that step, e.g. "7 días · pasos, sueño, pulso". */
+        val stageDetail: String = "",
+        /** When the question was sent, so the progress line can count seconds. */
+        val startedAt: Long = 0L,
     ) : AssistantMessage
 }
 
@@ -149,13 +165,24 @@ fun AssistantScreen(
             }
         }
 
+        val listState = rememberLazyListState()
+        // Keep the newest text in view while the answer is being written.
+        val lastLength = (messages.lastOrNull() as? AssistantMessage.Agent)?.text?.length ?: 0
+        LaunchedEffect(messages.size, lastLength) {
+            if (messages.isNotEmpty()) {
+                listState.animateScrollToItem(messages.lastIndex)
+            }
+        }
+
         LazyColumn(
+            state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
         ) {
             if (messages.isEmpty()) {
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("¿Cómo ha ido mi sueño esta semana?", "Resume mis pasos de los últimos 7 días", "¿Qué significa mi pulso en reposo?").forEach { prompt ->
                             AssistChip(onClick = { onSend(prompt) }, enabled = !isBusy, label = { Text(prompt) })
                         }
@@ -163,9 +190,11 @@ fun AssistantScreen(
                 }
             }
             itemsIndexed(messages) { _, message ->
-                when (message) {
-                    is AssistantMessage.User -> MessageBubble(message.text, fromUser = true)
-                    is AssistantMessage.Agent -> AgentBubble(message, onSend = onSend, isBusy = isBusy)
+                MessageEntrance(fromUser = message is AssistantMessage.User) {
+                    when (message) {
+                        is AssistantMessage.User -> MessageBubble(message.text, fromUser = true)
+                        is AssistantMessage.Agent -> AgentBubble(message, onSend = onSend, isBusy = isBusy)
+                    }
                 }
             }
         }
@@ -176,24 +205,27 @@ fun AssistantScreen(
                 onValueChange = { draft = it.take(500) },
                 modifier = Modifier.weight(1f),
                 enabled = !isBusy,
-                placeholder = { Text("Escribe una pregunta…") },
-                shape = RoundedCornerShape(24.dp),
+                placeholder = { Text(if (isBusy) "Escribiendo la respuesta…" else "Escribe una pregunta…") },
+                shape = RoundedCornerShape(26.dp),
                 maxLines = 3,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { submit(draft) { onSend(it); draft = "" } }),
             )
-            IconButton(
-                onClick = { submit(draft) { onSend(it); draft = "" } },
-                enabled = draft.isNotBlank() && !isBusy,
+            Box(
                 modifier = Modifier
                     .size(52.dp)
                     .background(
-                        color = if (draft.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        color = if (draft.isNotBlank() || isBusy) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceContainerHighest,
                         shape = CircleShape,
-                    ),
+                    )
+                    .clickable(enabled = draft.isNotBlank() && !isBusy) {
+                        submit(draft) { onSend(it); draft = "" }
+                    },
+                contentAlignment = Alignment.Center,
             ) {
                 if (isBusy) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    SendSpinner()
                 } else {
                     Icon(
                         Icons.AutoMirrored.Rounded.Send,
@@ -223,24 +255,24 @@ private fun MessageBubble(text: String, fromUser: Boolean) {
         horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth(0.86f),
+            modifier = Modifier.fillMaxWidth(if (fromUser) 0.84f else 0.9f),
             shape = RoundedCornerShape(
-                topStart = if (fromUser) 20.dp else 6.dp,
-                topEnd = 20.dp,
-                bottomStart = 20.dp,
-                bottomEnd = if (fromUser) 6.dp else 20.dp,
+                topStart = if (fromUser) 22.dp else 8.dp,
+                topEnd = 22.dp,
+                bottomStart = 22.dp,
+                bottomEnd = if (fromUser) 8.dp else 22.dp,
             ),
             colors = CardDefaults.cardColors(
                 containerColor = if (fromUser) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.94f)
                 } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f)
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f)
                 },
             ),
         ) {
             Text(
                 text,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier.padding(horizontal = 15.dp, vertical = 11.dp),
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (fromUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
             )
@@ -252,7 +284,12 @@ private fun MessageBubble(text: String, fromUser: Boolean) {
 private fun AgentBubble(message: AssistantMessage.Agent, onSend: (String) -> Unit, isBusy: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth(0.92f)) {
         if (message.streaming) {
-            AgentStageRow(message.stage, message.stageLabel)
+            ReasoningBlock(
+                stage = message.stage,
+                label = message.stageLabel,
+                detail = message.stageDetail,
+                startedAt = message.startedAt,
+            )
         }
         if (message.text.isNotBlank()) {
             MessageBubble(
@@ -321,58 +358,209 @@ private fun AgentBubble(message: AssistantMessage.Agent, onSend: (String) -> Uni
     }
 }
 
-/** What the agent is doing right now, with a pulse so a slow turn still feels alive. */
+/**
+ * What the agent is doing, with the numbers behind it: an orb that keeps
+ * turning, the step it is on, what that step is working with, and how long it
+ * has been going. Steps change with a slide-and-settle animation rather than a
+ * silent swap.
+ */
 @Composable
-private fun AgentStageRow(stage: String, label: String) {
-    val transition = rememberInfiniteTransition(label = "agent-working")
-    val pulse by transition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(720, easing = LinearEasing), RepeatMode.Reverse),
-        label = "agent-pulse",
-    )
-    val spin by transition.animateFloat(
+private fun ReasoningBlock(stage: String, label: String, detail: String, startedAt: Long) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 4.dp),
+    ) {
+        ReasoningOrb(stage)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                AnimatedContent(
+                    targetState = label,
+                    transitionSpec = {
+                        (fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 2 } + scaleIn(tween(260), initialScale = 0.92f)) togetherWith
+                            (fadeOut(tween(130)) + scaleOut(tween(130), targetScale = 1.04f))
+                    },
+                    label = "reasoning-label",
+                ) { current ->
+                    Text(
+                        current,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                ElapsedBadge(startedAt)
+            }
+            AnimatedContent(
+                targetState = detail,
+                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) },
+                label = "reasoning-detail",
+            ) { current ->
+                Text(
+                    current,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** A ring that keeps turning around the step's icon, so waiting feels alive. */
+@Composable
+private fun ReasoningOrb(stage: String) {
+    val transition = rememberInfiniteTransition(label = "reasoning-orb")
+    val rotation by transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
-        label = "agent-spin",
+        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing)),
+        label = "orb-rotation",
     )
+    val sweep by transition.animateFloat(
+        initialValue = 0.18f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "orb-sweep",
+    )
+    val pulse by transition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "orb-pulse",
+    )
+    val accent = MaterialTheme.colorScheme.tertiary
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-        modifier = Modifier.padding(start = 8.dp, bottom = 2.dp),
-    ) {
-        Icon(
-            imageVector = stageIcon(stage),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.tertiary,
+    Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+        Canvas(
             modifier = Modifier
-                .size(15.dp)
+                .fillMaxSize()
+                .graphicsLayer { rotationZ = rotation },
+        ) {
+            val stroke = 2.2.dp.toPx()
+            drawArc(
+                color = accent.copy(alpha = 0.16f),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+            drawArc(
+                color = accent,
+                startAngle = -90f,
+                sweepAngle = 360f * sweep,
+                useCenter = false,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(18.dp)
                 .alpha(pulse)
-                .rotate(if (stage == "pensando") spin else 0f),
-        )
-        AnimatedContent(
-            targetState = label,
-            transitionSpec = {
-                (fadeIn(tween(180)) + slideInVertically(tween(200)) { it / 2 }) togetherWith
-                    fadeOut(tween(120))
-            },
-            label = "agent-stage-label",
-        ) { current ->
-            Text(
-                current,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.tertiary,
+                .background(accent.copy(alpha = 0.16f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = stageIcon(stage),
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(11.dp),
             )
         }
     }
 }
 
+/** How long this turn has been running: small, live, and honest. */
+@Composable
+private fun ElapsedBadge(startedAt: Long) {
+    if (startedAt <= 0L) return
+    var now by remember(startedAt) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(startedAt) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(500)
+        }
+    }
+    val seconds = ((now - startedAt) / 1000).coerceAtLeast(0)
+    Text(
+        "${seconds}s",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
+}
+
+/** The send button, busy: a small turning ring instead of a generic spinner. */
+@Composable
+private fun SendSpinner() {
+    val transition = rememberInfiniteTransition(label = "send-spinner")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
+        label = "send-rotation",
+    )
+    val sweep by transition.animateFloat(
+        initialValue = 0.15f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(tween(800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "send-sweep",
+    )
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    Canvas(
+        modifier = Modifier
+            .size(24.dp)
+            .graphicsLayer { rotationZ = rotation },
+    ) {
+        val stroke = 2.4.dp.toPx()
+        drawArc(
+            color = onPrimary.copy(alpha = 0.28f),
+            startAngle = 0f,
+            sweepAngle = 360f,
+            useCenter = false,
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+        drawArc(
+            color = onPrimary,
+            startAngle = -90f,
+            sweepAngle = 360f * sweep,
+            useCenter = false,
+            style = Stroke(width = stroke, cap = StrokeCap.Round),
+        )
+    }
+}
+
+/** New messages arrive from their own side, so the thread reads in order. */
+@Composable
+private fun MessageEntrance(fromUser: Boolean, content: @Composable () -> Unit) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
+    }
+    val shift = (1f - progress.value) * (if (fromUser) 36f else -36f)
+    Box(
+        modifier = Modifier.graphicsLayer {
+            translationX = shift
+            alpha = progress.value
+            val scale = 0.96f + 0.04f * progress.value
+            scaleX = scale
+            scaleY = scale
+        },
+    ) {
+        content()
+    }
+}
+
 private fun stageIcon(stage: String) = when (stage) {
     "datos" -> Icons.Rounded.CloudDownload
+    "pensando" -> Icons.Rounded.Psychology
     "escribiendo" -> Icons.Rounded.EditNote
     "grafico" -> Icons.Rounded.Insights
+    "arranque" -> Icons.Rounded.Bolt
     else -> Icons.Rounded.AutoAwesome
 }
 

@@ -73,6 +73,30 @@ class TrendStatsTest {
     }
 
     @Test
+    fun driftComparesTheSecondHalfOfThePeriodWithTheFirst() {
+        assertNull(TrendStats.drift(listOf(60, 59, 58)))
+        assertEquals(
+            TrendStats.Direction.STABLE,
+            TrendStats.drift(listOf(60, 59, 60, 59))!!.direction,
+        )
+        val rising = TrendStats.drift(listOf(55, 56, 62, 64))!!
+        assertEquals(TrendStats.Direction.RISING, rising.direction)
+        assertEquals(8, rising.beatsPerMinute)
+        val falling = TrendStats.drift(listOf(64, 63, 56, 55))!!
+        assertEquals(TrendStats.Direction.FALLING, falling.direction)
+        assertEquals(8, falling.beatsPerMinute)
+    }
+
+    @Test
+    fun driftIgnoresSmallWobbles() {
+        // Two beats either way is noise, not a trend.
+        assertEquals(
+            TrendStats.Direction.STABLE,
+            TrendStats.drift(listOf(58, 59, 60, 60))!!.direction,
+        )
+    }
+
+    @Test
     fun dashboardSeriesAreDatedSoTheDaySheetCanFindThem() {
         val data = DashboardData(
             sleep = SleepSummary(0, 0, "", "", emptyList()),

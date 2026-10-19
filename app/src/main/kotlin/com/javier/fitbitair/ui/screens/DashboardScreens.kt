@@ -391,6 +391,14 @@ private fun RestingHeartCard(current: Int, previous: Int?, modifier: Modifier, o
 }
 
 @Composable
+private fun HeartMiniStat(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
 private fun RestingHeartDetail(
     data: DashboardData,
     onOpenDetail: () -> Unit = {},
@@ -417,6 +425,29 @@ private fun RestingHeartDetail(
                 }
             }
             HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay, modifier = Modifier.fillMaxWidth())
+            if (data.heartRateTrend.isNotEmpty()) {
+                val readings = data.heartRateTrend.map { it.beatsPerMinute }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    HeartMiniStat("Media", "${Math.round(readings.average())} lpm")
+                    HeartMiniStat("Mínimo", "${readings.min()} lpm")
+                    HeartMiniStat("Máximo", "${readings.max()} lpm")
+                    HeartMiniStat("Lecturas", "${readings.size}")
+                }
+                com.javier.fitbitair.domain.TrendStats.drift(readings)?.let { drift ->
+                    val text = when (drift.direction) {
+                        com.javier.fitbitair.domain.TrendStats.Direction.RISING ->
+                            "Subiendo ${drift.beatsPerMinute} lpm en la segunda mitad del periodo"
+                        com.javier.fitbitair.domain.TrendStats.Direction.FALLING ->
+                            "Bajando ${drift.beatsPerMinute} lpm en la segunda mitad del periodo"
+                        com.javier.fitbitair.domain.TrendStats.Direction.STABLE ->
+                            "Estable entre la primera y la segunda mitad del periodo"
+                    }
+                    Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             Text("Lectura informativa · no es una evaluación médica", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

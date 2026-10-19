@@ -328,6 +328,7 @@ fun FitbitAirApp(
                                             isDemo = false,
                                             streaming = true,
                                             stageLabel = "Preparando la consulta",
+                                            startedAt = System.currentTimeMillis(),
                                         )
                                         val answerIndex = chat.lastIndex
                                         assistantBusy = true
@@ -362,6 +363,7 @@ fun FitbitAirApp(
                                                         chat[answerIndex] = bubble.copy(
                                                             stage = event.id,
                                                             stageLabel = event.label,
+                                                            stageDetail = event.detail.orEmpty(),
                                                         )
                                                     is com.javier.fitbitair.domain.AssistantStreamEvent.Delta -> {
                                                         streamed.append(event.text)
