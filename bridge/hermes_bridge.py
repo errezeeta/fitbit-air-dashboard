@@ -12,6 +12,7 @@ Uso:
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import subprocess
@@ -150,6 +151,18 @@ def ask_hermes(job: dict, on_delta=None):
 
 
 def main() -> int:
+    # One bridge only: two instances double-claim jobs and answer from stale
+    # code. The lock makes the second one exit instead of racing. The path must
+    # live outside /tmp: a unit with PrivateTmp=true gets its own namespace and
+    # would hold an unrelated file.
+    lock_path = os.environ.get("BRIDGE_LOCK_FILE", "/root/.hermes/fitbit-air-bridge.lock")
+    lock_handle = open(lock_path, "w", encoding="utf-8")  # noqa: SIM115 - held for the process lifetime
+    try:
+        fcntl.flock(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print(f"ya hay otro puente activo (candado {lock_path}); salgo", flush=True)
+        return 0
+
     key = read_key()
     print(f"puente activo → {BACKEND_URL} (sondeo cada {POLL_SECONDS:g}s)", flush=True)
     while True:
