@@ -65,6 +65,7 @@ import com.javier.fitbitair.ui.components.DistanceBarChart
 import com.javier.fitbitair.ui.components.HeartRateSparkline
 import com.javier.fitbitair.ui.components.SleepStageBar
 import com.javier.fitbitair.ui.components.SleepStageLegend
+import com.javier.fitbitair.ui.components.SleepStagesChart
 import com.javier.fitbitair.ui.components.SleepTrendChart
 import com.javier.fitbitair.ui.components.StepsBarChart
 import com.javier.fitbitair.ui.components.formatDistanceValue
@@ -123,7 +124,7 @@ fun HomeScreen(
             onRangeChange = onRangeChange,
             onOpenDetail = { onOpenDetail(MetricKind.STEPS) },
         ) {
-            StepsBarChart(data.stepsTrend, onOpenDay = onOpenDay)
+            StepsBarChart(data.stepsTrend, goal = stepGoal, onOpenDay = onOpenDay)
         }
 
     }
@@ -170,6 +171,14 @@ fun SleepScreen(
         ) {
             SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
         }
+        TrendPanel(
+            "Fases de cada noche",
+            range,
+            onRangeChange = {},
+            onOpenDetail = { onOpenDetail(MetricKind.SLEEP) },
+        ) {
+            SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
+        }
         InfoNote("*La eficiencia es un cálculo propio (tiempo dormido ÷ tiempo en cama). No es el Sleep Score de Fitbit.")
     }
 }
@@ -205,7 +214,7 @@ fun ActivityScreen(
             onRangeChange,
             onOpenDetail = { onOpenDetail(MetricKind.STEPS) },
         ) {
-            StepsBarChart(data.stepsTrend, onOpenDay = onOpenDay)
+            StepsBarChart(data.stepsTrend, goal = stepGoal, onOpenDay = onOpenDay)
         }
         if (data.distanceTrend.isNotEmpty()) {
             TrendPanel(

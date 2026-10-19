@@ -45,6 +45,7 @@ import com.javier.fitbitair.domain.stepPoints
 import com.javier.fitbitair.ui.components.DistanceBarChart
 import com.javier.fitbitair.ui.components.HeartRateSparkline
 import com.javier.fitbitair.ui.components.SleepTrendChart
+import com.javier.fitbitair.ui.components.SleepStagesChart
 import com.javier.fitbitair.ui.components.StepsBarChart
 import com.javier.fitbitair.ui.components.formatDistanceValue
 import com.javier.fitbitair.ui.components.formatDurationValue
@@ -110,9 +111,16 @@ fun MetricDetailScreen(
                     fontWeight = FontWeight.SemiBold,
                 )
                 when (kind) {
-                    MetricKind.STEPS -> StepsBarChart(data.stepsTrend, onOpenDay = onOpenDay)
+                    MetricKind.STEPS -> StepsBarChart(
+                        data.stepsTrend,
+                        goal = stepGoal,
+                        onOpenDay = onOpenDay,
+                    )
                     MetricKind.DISTANCE -> DistanceBarChart(data.distanceTrend, onOpenDay = onOpenDay)
-                    MetricKind.SLEEP -> SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
+                    MetricKind.SLEEP -> Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
+                        SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
+                    }
                     MetricKind.HEART -> HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay)
                 }
                 Hint("Toca una barra para ver ese día · mantén pulsado para abrir su ficha")

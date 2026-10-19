@@ -89,6 +89,7 @@ private data class TrendEntry(
 @Composable
 fun StepsBarChart(
     data: List<DailySteps>,
+    goal: Int? = null,
     onOpenDay: ((LocalDate) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -98,6 +99,8 @@ fun StepsBarChart(
         barValue = ::compactSteps,
         highlightColor = MaterialTheme.colorScheme.primary,
         averageLabel = averageTooltip(data.map { it.steps }) { "${formatStepsCount(it)} pasos" },
+        goal = goal,
+        goalLabel = goal?.let { "meta ${formatStepsCount(it)}" } ?: "",
         onOpenDay = onOpenDay,
         modifier = modifier,
     )
@@ -152,6 +155,8 @@ private fun TrendBarChart(
     barValue: (Int) -> String,
     highlightColor: Color,
     averageLabel: String,
+    goal: Int? = null,
+    goalLabel: String = "",
     onOpenDay: ((LocalDate) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -170,9 +175,10 @@ private fun TrendBarChart(
         fontSize = 10.sp,
     )
     val mutedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val goalColor = MaterialTheme.colorScheme.tertiary
     val valueLabelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp)
     val plotHeight = 112.dp
-    val showValues = entries.size <= 8
+    val showValues = entries.size <= 10
 
     Column(modifier = modifier.fillMaxWidth()) {
         SelectedTooltip(entries, selected, tooltipDetail, highlightColor, averageLabel)
@@ -205,7 +211,9 @@ private fun TrendBarChart(
             val usableHeight = baselineY - plotTop
             val slot = plotWidth / entries.size
             val barWidth = (slot * if (entries.size > 16) 0.58f else 0.68f).coerceAtMost(20.dp.toPx())
-            val maximum = entries.maxOf { it.value }.coerceAtLeast(1)
+            val maximum = entries.maxOf { it.value }
+                .coerceAtLeast(goal ?: 1)
+                .coerceAtLeast(1)
             val average = entries.sumOf { it.value }.toFloat() / entries.size
             val crown = (barWidth / 2f).coerceAtMost(6.dp.toPx())
 
@@ -224,6 +232,32 @@ private fun TrendBarChart(
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(7f, 7f)),
             )
 
+            // The goal is what makes the bars readable at a glance: days that
+            // reach it stay in full colour, the rest recede.
+            goal?.let { target ->
+                val goalY = baselineY - (target.toFloat() / maximum) * usableHeight
+                drawLine(
+                    goalColor.copy(alpha = 0.8f),
+                    Offset(0f, goalY),
+                    Offset(plotWidth, goalY),
+                    1.4.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 5f)),
+                )
+                if (goalLabel.isNotEmpty()) {
+                    val measured = measurer.measure(
+                        goalLabel,
+                        axisLabelStyle.copy(color = goalColor, fontSize = 9.sp),
+                    )
+                    drawText(
+                        measured,
+                        topLeft = Offset(
+                            3.dp.toPx(),
+                            (goalY - measured.size.height - 2.dp.toPx()).coerceAtLeast(0f),
+                        ),
+                    )
+                }
+            }
+
             entries.forEachIndexed { index, entry ->
                 val centerX = slot * (index + 0.5f)
                 val left = centerX - barWidth / 2f
@@ -239,6 +273,12 @@ private fun TrendBarChart(
                 val fraction = (entry.value.toFloat() / maximum).coerceIn(0f, 1f)
                 if (fraction > 0f) {
                     val barTop = baselineY - fraction * usableHeight
+                    val reachedGoal = goal != null && entry.value >= goal
+                    val barColor = when {
+                        isSelected -> highlightColor
+                        reachedGoal -> highlightColor.copy(alpha = 0.58f)
+                        else -> dormantBarColor
+                    }
                     if (isSelected) {
                         drawPath(
                             roundedCrownPath(
@@ -255,8 +295,8 @@ private fun TrendBarChart(
                         roundedCrownPath(left, barTop, right, baselineY, crown),
                         Brush.verticalGradient(
                             colors = listOf(
-                                if (isSelected) highlightColor else dormantBarColor,
-                                (if (isSelected) highlightColor else dormantBarColor).copy(alpha = 0.62f),
+                                barColor,
+                                barColor.copy(alpha = 0.62f),
                             ),
                             startY = barTop,
                             endY = baselineY,
@@ -451,6 +491,7 @@ fun HeartRateSparkline(
     val lineColor = MaterialTheme.colorScheme.tertiary
     val axisColor = MaterialTheme.colorScheme.outline
     val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)
+    val measurer = rememberTextMeasurer()
     val values = data.map { it.beatsPerMinute.toFloat() }
     val average = values.average()
 
@@ -491,6 +532,32 @@ fun HeartRateSparkline(
             1.dp.toPx(),
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f)),
         )
+
+        // The band the readings moved in, so the line has a scale on its own.
+        listOf(
+            (values.minOrNull() ?: 0f) to "mín",
+            (values.maxOrNull() ?: 0f) to "máx",
+        ).forEach { (value, caption) ->
+            val y = inset + (size.height - 2 * inset) * (1f - (value - minimum) / span)
+            drawLine(
+                axisColor.copy(alpha = 0.35f),
+                Offset(0f, y),
+                Offset(size.width, y),
+                1.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f, 6f)),
+            )
+            val measured = measurer.measure(
+                "$caption ${value.toInt()}",
+                labelStyle.copy(color = axisColor.copy(alpha = 0.85f), fontSize = 9.sp),
+            )
+            drawText(
+                measured,
+                topLeft = Offset(
+                    (size.width - measured.size.width - 2.dp.toPx()).coerceAtLeast(0f),
+                    (y - measured.size.height - 1.dp.toPx()).coerceAtLeast(0f),
+                ),
+            )
+        }
 
         val curve = Path().apply {
             moveTo(points.first().x, points.first().y)

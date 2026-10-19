@@ -90,7 +90,9 @@ fun FitbitAirApp(
     dataRevision: Int = 0,
     updater: com.javier.fitbitair.data.AppUpdater? = null,
     onConnectGoogleHealth: () -> Unit = {},
-    onAskAssistant: suspend (String, TrendRange) -> String = { _, _ -> "El asistente todavía no está disponible." },
+    onAskAssistant: suspend (String, TrendRange) -> com.javier.fitbitair.domain.AssistantAnswer = { _, _ ->
+        com.javier.fitbitair.domain.AssistantAnswer(text = "El asistente todavía no está disponible.")
+    },
 ) {
     val stateStore = remember(stepGoalStore) {
         DashboardUiStateStore().apply { setStepGoal(stepGoalStore.getGoal()) }
@@ -329,12 +331,16 @@ fun FitbitAirApp(
                                             val answer = try {
                                                 onAskAssistant(message, selectedRange)
                                             } catch (_: Exception) {
-                                                "No se pudo consultar el asistente. Inténtalo de nuevo más tarde."
+                                                com.javier.fitbitair.domain.AssistantAnswer(
+                                                    text = "No se pudo consultar el asistente. Inténtalo de nuevo más tarde.",
+                                                )
                                             }
                                             chat[answerIndex] = AssistantMessage.Agent(
-                                                text = answer,
+                                                text = answer.text,
                                                 usedData = "Google Health · ${selectedRange.label}",
                                                 isDemo = false,
+                                                chart = answer.chart,
+                                                suggestions = answer.suggestions,
                                             )
                                             assistantBusy = false
                                         }

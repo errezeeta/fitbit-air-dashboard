@@ -277,5 +277,42 @@ class BridgeDisabledTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(503, response.status_code)
 
 
+class BridgePromptTest(unittest.TestCase):
+    """The prompt is built once per question; it must never raise."""
+
+    def _bridge(self):
+        import importlib.util
+        import sys
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[2]
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        spec = importlib.util.spec_from_file_location(
+            "hermes_bridge_under_test", root / "bridge" / "hermes_bridge.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_the_envelope_braces_survive_formatting(self):
+        # str.format over the envelope raised KeyError('"answer"') on every
+        # question, so this guards the split between template and instructions.
+        prompt = self._bridge().build_prompt(
+            {
+                "question": "¿Cuántos pasos he dado?",
+                "range": "week",
+                "timezone": "Europe/Madrid",
+                "dashboard": {"status": "ready", "stepsToday": 8420},
+            }
+        )
+
+        self.assertIn("¿Cuántos pasos he dado?", prompt)
+        self.assertIn("8420", prompt)
+        self.assertIn('"answer"', prompt)
+        self.assertIn('"points"', prompt)
+        self.assertNotIn("{question}", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()

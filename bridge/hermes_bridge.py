@@ -48,7 +48,20 @@ Resumen de mis métricas ({range_name}, zona horaria {timezone}) en JSON:
 {dashboard}
 """
 
-PROMPT = PROMPT_TEMPLATE + "\n" + ENVELOPE_INSTRUCTIONS
+
+def build_prompt(job: dict) -> str:
+    """Fill the template, then append the envelope rules.
+
+    The envelope's own braces must never go through `str.format`: doing that
+    raised KeyError('"answer"') on every question.
+    """
+    header = PROMPT_TEMPLATE.format(
+        question=job["question"],
+        range_name=job.get("range", "week"),
+        timezone=job.get("timezone", "UTC"),
+        dashboard=json.dumps(job.get("dashboard", {}), ensure_ascii=False),
+    )
+    return header + "\n" + ENVELOPE_INSTRUCTIONS + "\n"
 
 
 def read_key() -> str:
@@ -74,12 +87,7 @@ def call(path: str, payload: dict | None, key: str, method: str = "POST") -> dic
 
 def ask_hermes(job: dict):
     """Run one agent turn and return the parsed reply (prose + optional extras)."""
-    prompt = PROMPT.format(
-        question=job["question"],
-        range_name=job.get("range", "week"),
-        timezone=job.get("timezone", "UTC"),
-        dashboard=json.dumps(job.get("dashboard", {}), ensure_ascii=False),
-    )
+    prompt = build_prompt(job)
     environment = dict(os.environ)
     environment["HERMES_HOME"] = HERMES_HOME
     completed = subprocess.run(

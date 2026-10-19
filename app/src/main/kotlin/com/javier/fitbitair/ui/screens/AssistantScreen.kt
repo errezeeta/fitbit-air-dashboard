@@ -45,10 +45,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.javier.fitbitair.domain.AssistantChart
+import com.javier.fitbitair.ui.components.ChatMiniChart
 
 sealed interface AssistantMessage {
     data class User(val text: String) : AssistantMessage
-    data class Agent(val text: String, val usedData: String, val isDemo: Boolean) : AssistantMessage
+    data class Agent(
+        val text: String,
+        val usedData: String,
+        val isDemo: Boolean,
+        /** The agent decides when a chart helps; null means a plain answer. */
+        val chart: AssistantChart? = null,
+        /** Tappable follow-ups the agent proposed to keep the thread going. */
+        val suggestions: List<String> = emptyList(),
+    ) : AssistantMessage
 }
 
 @Composable
@@ -133,7 +143,7 @@ fun AssistantScreen(
             itemsIndexed(messages) { _, message ->
                 when (message) {
                     is AssistantMessage.User -> MessageBubble(message.text, fromUser = true)
-                    is AssistantMessage.Agent -> AgentBubble(message)
+                    is AssistantMessage.Agent -> AgentBubble(message, onSend = onSend, isBusy = isBusy)
                 }
             }
         }
@@ -217,9 +227,30 @@ private fun MessageBubble(text: String, fromUser: Boolean) {
 }
 
 @Composable
-private fun AgentBubble(message: AssistantMessage.Agent) {
+private fun AgentBubble(message: AssistantMessage.Agent, onSend: (String) -> Unit, isBusy: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth(0.92f)) {
         MessageBubble(message.text, fromUser = false)
+        message.chart?.let { chart ->
+            ChatMiniChart(chart, modifier = Modifier.padding(top = 2.dp))
+        }
+        if (message.suggestions.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                message.suggestions.forEach { suggestion ->
+                    AssistChip(
+                        onClick = { onSend(suggestion) },
+                        enabled = !isBusy,
+                        label = { Text(suggestion) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                    )
+                }
+            }
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),

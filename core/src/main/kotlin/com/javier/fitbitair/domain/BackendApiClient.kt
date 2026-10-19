@@ -116,7 +116,7 @@ class BackendApiClient(
         return BackendDashboardMapper.parse(response.body, range)
     }
 
-    fun askAssistant(question: String, range: TrendRange, timezone: String): String {
+    fun askAssistant(question: String, range: TrendRange, timezone: String): AssistantAnswer {
         val session = credentials.loadSessionToken()
             ?: throw BackendApiException("Conecta Google Health antes de usar el asistente")
         val rangeName = if (range == TrendRange.WEEK) "week" else "month"
@@ -129,7 +129,8 @@ class BackendApiClient(
         )
         val response = transport.post("/api/assistant", body, bearerToken = session)
         val json = successfulJson(response, "No se pudo consultar al asistente")
-        return json.stringValue("answer").takeIf(String::isNotBlank)
+        val answer = AssistantAnswerParser.parse(json)
+        return answer.takeIf { it.text.isNotBlank() }
             ?: throw BackendApiException("El asistente devolvió una respuesta vacía")
     }
 
