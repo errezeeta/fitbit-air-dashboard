@@ -63,6 +63,9 @@ fun SleepStagesChart(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 10.sp,
     )
+    // Resolved before the Canvas: MaterialTheme cannot be read inside a draw lambda.
+    val baselineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    val selectionOutline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
     val plotHeight = 118.dp
 
     val colors = mapOf(
@@ -123,7 +126,7 @@ fun SleepStagesChart(
             val crown = (barWidth / 2f).coerceAtMost(6.dp.toPx())
 
             drawLine(
-                MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                baselineColor,
                 Offset(0f, baselineY),
                 Offset(size.width, baselineY),
                 1.dp.toPx(),
@@ -151,7 +154,7 @@ fun SleepStagesChart(
 
                 if (isSelected) {
                     drawRoundRect(
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                        color = selectionOutline,
                         topLeft = Offset(left - 2.dp.toPx(), cursorY - 2.dp.toPx()),
                         size = Size(barWidth + 4.dp.toPx(), (baselineY - cursorY) + 4.dp.toPx()),
                         cornerRadius = CornerRadius(crown),

@@ -44,6 +44,8 @@ fun ChatMiniChart(chart: AssistantChart, modifier: Modifier = Modifier) {
         fontSize = 9.sp,
     )
     val valueStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp)
+    // Resolved before the Canvas: MaterialTheme cannot be read inside a draw lambda.
+    val baselineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
     val showEveryLabel = chart.points.size <= 7
 
     Card(
@@ -88,7 +90,7 @@ fun ChatMiniChart(chart: AssistantChart, modifier: Modifier = Modifier) {
                 val barWidth = (slot * 0.62f).coerceAtMost(18.dp.toPx())
 
                 drawLine(
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                    baselineColor,
                     Offset(0f, baselineY),
                     Offset(size.width, baselineY),
                     1.dp.toPx(),

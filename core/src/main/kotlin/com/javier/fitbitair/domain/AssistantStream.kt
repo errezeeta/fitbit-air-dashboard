@@ -22,7 +22,11 @@ object AssistantStreamParser {
     /** Null for anything unusable, so a stray line never breaks the stream. */
     fun parse(dataLine: String): AssistantStreamEvent? {
         val node = runCatching { JsonParser.parseString(dataLine).asJsonObject }.getOrNull() ?: return null
-        node.text("delta")?.let { delta -> return AssistantStreamEvent.Delta(delta) }
+        // Deltas keep their exact text: trimming would glue words together
+        // ("hola" + " mundo" must not become "holamundo").
+        node.rawText("delta")?.takeIf { it.isNotEmpty() }?.let { delta ->
+            return AssistantStreamEvent.Delta(delta)
+        }
         node.text("stage")?.let { stage ->
             return AssistantStreamEvent.Stage(stage, node.text("label") ?: stage)
         }
@@ -33,10 +37,8 @@ object AssistantStreamParser {
         return null
     }
 
-    private fun JsonObject.text(name: String): String? =
-        (get(name) as? JsonElement)
-            ?.takeIf { it.isJsonPrimitive }
-            ?.asString
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+    private fun JsonObject.rawText(name: String): String? =
+        (get(name) as? JsonElement)?.takeIf { it.isJsonPrimitive }?.asString
+
+    private fun JsonObject.text(name: String): String? = rawText(name)?.trim()?.takeIf { it.isNotEmpty() }
 }
