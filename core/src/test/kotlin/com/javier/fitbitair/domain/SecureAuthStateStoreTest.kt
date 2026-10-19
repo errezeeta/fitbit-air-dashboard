@@ -61,7 +61,15 @@ class SecureAuthStateStoreTest {
         assertNotEquals(first, second)
         assertFalse(first.contains("health-session"))
         assertEquals("health-session", codec.decrypt(first))
-        val tampered = first.dropLast(1) + if (first.last() == 'A') "B" else "A"
+        // Tamper with a character in the middle: the last character of a base64
+        // blob can carry only padding bits, so flipping it sometimes decodes to
+        // the very same bytes and the test passed or failed at random.
+        val middle = first.length / 2
+        val tampered = first.replaceRange(
+            middle,
+            middle + 1,
+            if (first[middle] == 'A') "B" else "A",
+        )
         assertThrows(SecurityException::class.java) { codec.decrypt(tampered) }
     }
 }
