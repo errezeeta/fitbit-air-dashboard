@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -165,6 +166,12 @@ private fun TrendBarChart(
         return
     }
     var selected by remember(entries) { mutableStateOf(entries.lastIndex) }
+    // Bars grow into place instead of appearing already drawn.
+    val grow = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(entries) {
+        grow.snapTo(0f)
+        grow.animateTo(1f, androidx.compose.animation.core.tween(480, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+    }
     val measurer = rememberTextMeasurer()
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
     val axisColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
@@ -225,7 +232,7 @@ private fun TrendBarChart(
             // dashed average line, captioned by the chip in the header
             val averageY = baselineY - (average / maximum) * usableHeight
             drawLine(
-                highlightColor.copy(alpha = 0.75f),
+                highlightColor.copy(alpha = 0.75f * grow.value),
                 Offset(0f, averageY),
                 Offset(plotWidth, averageY),
                 1.dp.toPx(),
@@ -270,7 +277,7 @@ private fun TrendBarChart(
                     trackColor,
                 )
 
-                val fraction = (entry.value.toFloat() / maximum).coerceIn(0f, 1f)
+                val fraction = ((entry.value.toFloat() / maximum) * grow.value).coerceIn(0f, 1f)
                 if (fraction > 0f) {
                     val barTop = baselineY - fraction * usableHeight
                     val reachedGoal = goal != null && entry.value >= goal

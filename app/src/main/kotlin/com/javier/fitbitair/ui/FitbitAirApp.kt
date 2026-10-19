@@ -1,5 +1,6 @@
 package com.javier.fitbitair.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.fadeIn
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -64,6 +67,7 @@ import com.javier.fitbitair.ui.screens.HomeScreen
 import com.javier.fitbitair.ui.screens.MetricDetailScreen
 import com.javier.fitbitair.ui.screens.SettingsScreen
 import com.javier.fitbitair.ui.screens.SleepScreen
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 
 private enum class AppTab(
@@ -111,6 +115,24 @@ fun FitbitAirApp(
         detailMetric = null
         stateStore.select(destination)
         uiState = stateStore.state
+    }
+
+    // Back should walk the app back, not kill it: a detail view closes, settings
+    // close, another tab returns Home, and only then does the system take over.
+    BackHandler(
+        enabled = daySheet != null ||
+            detailMetric != null ||
+            uiState.destination != DashboardDestination.HOME,
+    ) {
+        when {
+            daySheet != null -> daySheet = null
+            detailMetric != null -> detailMetric = null
+            uiState.destination == DashboardDestination.SETTINGS -> {
+                stateStore.closeSettings()
+                uiState = stateStore.state
+            }
+            else -> select(DashboardDestination.HOME)
+        }
     }
 
     fun changeRange(range: TrendRange) {
@@ -242,6 +264,8 @@ fun FitbitAirApp(
                 }
                 return@Column
             }
+            // Tabs live in a horizontal pager: the same screens, but you can
+            // slide between them instead of only tapping the bar.
             AnimatedContent(
                 targetState = uiState.destination,
                 modifier = Modifier.weight(1f),
@@ -251,8 +275,8 @@ fun FitbitAirApp(
                 },
                 label = "screen-transition",
             ) { destination ->
-                when (destination) {
-                    DashboardDestination.SETTINGS -> SettingsScreen(
+                if (destination == DashboardDestination.SETTINGS) {
+                    SettingsScreen(
                         stepGoal = uiState.stepGoal,
                         onStepGoalChange = ::updateStepGoal,
                         backendConfigured = backendConfigured,
@@ -263,7 +287,32 @@ fun FitbitAirApp(
                         onConnectGoogleHealth = onConnectGoogleHealth,
                         updater = updater,
                     )
-                    DashboardDestination.HOME -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
+                } else {
+                    val tabs = appTabs
+                    val pagerState = rememberPagerState(
+                        initialPage = tabs.indexOf(destination).coerceAtLeast(0),
+                    ) { tabs.size }
+                    // Swiping and the bottom bar move the same state, one hop.
+                    LaunchedEffect(pagerState) {
+                        snapshotFlow { pagerState.settledPage }.collect { page ->
+                            val next = tabs.getOrNull(page) ?: return@collect
+                            if (next != uiState.destination) select(next)
+                        }
+                    }
+                    LaunchedEffect(destination) {
+                        val target = tabs.indexOf(destination)
+                        if (target >= 0 && target != pagerState.currentPage) {
+                            pagerState.animateScrollToPage(target)
+                        }
+                    }
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize(),
+                        beyondViewportPageCount = 1,
+                        key = { page -> tabs[page] },
+                    ) { page ->
+                        when (tabs[page]) {
+                            DashboardDestination.HOME -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
                         HomeScreen(
                             data = data,
                             stepGoal = uiState.stepGoal,
@@ -295,6 +344,7 @@ fun FitbitAirApp(
                             onOpenDay = { daySheet = it },
                         )
                     }
+                    DashboardDestination.SETTINGS -> Unit
                     DashboardDestination.ASSISTANT -> AssistantScreen(
                         messages = chat,
                         backendConfigured = backendConfigured,
@@ -410,11 +460,20 @@ fun FitbitAirApp(
                             }
                         },
                     )
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+private val appTabs = listOf(
+    DashboardDestination.HOME,
+    DashboardDestination.SLEEP,
+    DashboardDestination.ACTIVITY,
+    DashboardDestination.ASSISTANT,
+)
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable

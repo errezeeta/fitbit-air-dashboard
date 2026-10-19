@@ -62,6 +62,8 @@ import com.javier.fitbitair.domain.sleepEfficiencyPercent
 import com.javier.fitbitair.domain.stepProgress
 import com.javier.fitbitair.domain.trendDelta
 import com.javier.fitbitair.ui.components.DistanceBarChart
+import com.javier.fitbitair.ui.components.StaggeredAppear
+import com.javier.fitbitair.ui.components.clickableScaled
 import com.javier.fitbitair.ui.components.HeartRateSparkline
 import com.javier.fitbitair.ui.components.SleepStageBar
 import com.javier.fitbitair.ui.components.SleepStageLegend
@@ -95,36 +97,44 @@ fun HomeScreen(
             Text(todayLabel(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        SleepHeroCard(data.sleep, onOpen = onOpenSleep)
+        StaggeredAppear(index = 1) {
+            SleepHeroCard(data.sleep, onOpen = onOpenSleep)
+        }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            StepsMetricCard(
-                steps = data.stepsToday,
-                goal = stepGoal,
-                modifier = Modifier.weight(1f),
-                onEditGoal = { showGoalDialog = true },
-            )
-            RestingHeartCard(
-                current = data.restingHeartRate,
-                previous = data.previousRestingHeartRate,
-                modifier = Modifier.weight(1f),
-                onClick = {},
+        StaggeredAppear(index = 2) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                StepsMetricCard(
+                    steps = data.stepsToday,
+                    goal = stepGoal,
+                    modifier = Modifier.weight(1f),
+                    onEditGoal = { showGoalDialog = true },
+                )
+                RestingHeartCard(
+                    current = data.restingHeartRate,
+                    previous = data.previousRestingHeartRate,
+                    modifier = Modifier.weight(1f),
+                    onClick = {},
+                )
+            }
+        }
+
+        StaggeredAppear(index = 3) {
+            DistanceCard(
+                meters = data.distanceTodayMeters,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { onOpenDetail(MetricKind.DISTANCE) },
             )
         }
 
-        DistanceCard(
-            meters = data.distanceTodayMeters,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { onOpenDetail(MetricKind.DISTANCE) },
-        )
-
-        TrendPanel(
-            title = if (range == TrendRange.WEEK) "Pasos esta semana" else "Pasos últimos 30 días",
-            range = range,
-            onRangeChange = onRangeChange,
-            onOpenDetail = { onOpenDetail(MetricKind.STEPS) },
-        ) {
-            StepsBarChart(data.stepsTrend, goal = stepGoal, onOpenDay = onOpenDay)
+        StaggeredAppear(index = 4) {
+            TrendPanel(
+                title = if (range == TrendRange.WEEK) "Pasos esta semana" else "Pasos últimos 30 días",
+                range = range,
+                onRangeChange = onRangeChange,
+                onOpenDetail = { onOpenDetail(MetricKind.STEPS) },
+            ) {
+                StepsBarChart(data.stepsTrend, goal = stepGoal, onOpenDay = onOpenDay)
+            }
         }
 
     }
@@ -243,7 +253,7 @@ fun ActivityScreen(
 private fun SleepHeroCard(sleep: SleepSummary, onOpen: () -> Unit) {
     val efficiency = sleepEfficiencyPercent(sleep.asleepMinutes, sleep.inBedMinutes)
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        modifier = Modifier.fillMaxWidth().clickableScaled(onClick = onOpen),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
@@ -280,7 +290,7 @@ private fun SleepHeroCard(sleep: SleepSummary, onOpen: () -> Unit) {
 private fun DistanceCard(meters: Int, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     if (meters <= 0) return
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.clickableScaled(onClick = onClick),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.86f),
@@ -337,7 +347,7 @@ private fun StepsMetricCard(steps: Int, goal: Int, modifier: Modifier, onEditGoa
 
 @Composable
 private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit, onClick: () -> Unit = {}) {
-    ElevatedCard(shape = RoundedCornerShape(28.dp), modifier = Modifier.clickable(onClick = onClick)) {
+    ElevatedCard(shape = RoundedCornerShape(28.dp), modifier = Modifier.clickableScaled(onClick = onClick)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -371,7 +381,7 @@ private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit, onClick: ()
 private fun RestingHeartCard(current: Int, previous: Int?, modifier: Modifier, onClick: () -> Unit) {
     val validCurrent = current.takeIf { it > 0 }
     val delta = validCurrent?.let { trendDelta(it, previous) }
-    Card(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    Card(modifier = modifier.clickableScaled(onClick = onClick), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
             Text("Pulso en reposo", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -405,7 +415,7 @@ private fun RestingHeartDetail(
     onOpenDay: (LocalDate) -> Unit = {},
 ) {
     val current = data.restingHeartRate.takeIf { it > 0 }
-    ElevatedCard(shape = RoundedCornerShape(26.dp), modifier = Modifier.clickable(onClick = onOpenDetail)) {
+    ElevatedCard(shape = RoundedCornerShape(26.dp), modifier = Modifier.clickableScaled(onClick = onOpenDetail)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column {

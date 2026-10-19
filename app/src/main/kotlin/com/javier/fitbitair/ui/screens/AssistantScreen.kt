@@ -248,6 +248,34 @@ fun AssistantScreen(
     }
 }
 
+/**
+ * The answer is revealed as a steady stream of characters, not in the chunks
+ * the network delivers: text that lands in bursts still reads like it is being
+ * typed. Far behind? It catches up a little faster, so it never lags the model.
+ */
+@Composable
+private fun StreamingBubble(text: String, streaming: Boolean) {
+    var revealed by remember { mutableStateOf(0) }
+    LaunchedEffect(text, streaming) {
+        if (!streaming) {
+            revealed = text.length
+            return@LaunchedEffect
+        }
+        if (revealed > text.length) revealed = text.length
+        while (revealed < text.length) {
+            val behind = text.length - revealed
+            revealed += when {
+                behind > 160 -> 4
+                behind > 60 -> 2
+                else -> 1
+            }
+            delay(14)
+        }
+    }
+    val visible = if (streaming) text.take(revealed.coerceIn(0, text.length)) else text
+    MessageBubble(text = if (streaming) "$visible▍" else visible, fromUser = false)
+}
+
 @Composable
 private fun MessageBubble(text: String, fromUser: Boolean) {
     Row(
@@ -292,10 +320,7 @@ private fun AgentBubble(message: AssistantMessage.Agent, onSend: (String) -> Uni
             )
         }
         if (message.text.isNotBlank()) {
-            MessageBubble(
-                text = if (message.streaming) "${message.text}▍" else message.text,
-                fromUser = false,
-            )
+            StreamingBubble(text = message.text, streaming = message.streaming)
         }
         AnimatedVisibility(
             visible = message.chart != null,
