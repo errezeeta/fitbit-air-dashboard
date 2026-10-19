@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 import os
 import time
 from contextlib import asynccontextmanager
@@ -12,7 +13,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.app.assistant_queue import AssistantQueue, AssistantReply
@@ -101,6 +102,13 @@ class BridgeAnswerRequest(BaseModel):
     answer: str = Field(min_length=1, max_length=4000)
     chart: dict | None = None
     suggestions: list[str] | None = Field(default=None, max_length=6)
+
+
+class BridgeChunkRequest(BaseModel):
+    """A slice of the answer as the agent writes it."""
+
+    jobId: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=8000)
 
 
 def create_app(
@@ -362,6 +370,77 @@ def create_app(
             raise HTTPException(status_code=502, detail="Hermes returned an empty answer")
         return {**reply.to_payload(), "dataRange": request.range}
 
+    @app.post("/api/assistant/stream")
+    def ask_assistant_stream(
+        request: AssistantRequest,
+        authorization: str | None = Header(default=None),
+    ) -> StreamingResponse:
+        """The same question, answered as it is written.
+
+        Events: `stage` (what the agent is doing right now), `delta` (text as it
+        arrives), `done` (final answer with its chart and chips), `error`.
+        """
+        if hermes_client is None and assistant_queue is None:
+            raise HTTPException(status_code=503, detail="Hermes is not configured")
+        if health_client is None or refresh_token_store is None:
+            raise HTTPException(status_code=503, detail="Google Health is not configured")
+        session = _session_claims(authorization, settings)
+        if session.get("email", "").casefold() != settings.allowed_email.casefold():
+            raise HTTPException(status_code=403, detail="Google account is not authorized")
+        if session.get("scope") != "dashboard":
+            raise HTTPException(status_code=403, detail="Session does not allow assistant access")
+        try:
+            ZoneInfo(request.timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Timezone is invalid") from exc
+
+        def events():
+            yield _sse_event({"stage": "datos", "label": "Recogiendo tus datos"})
+            try:
+                refresh_token = refresh_token_store.read_refresh_token()
+                client = health_client
+                days = 7 if request.range == "week" else 30
+
+                def load() -> dict:
+                    return client.load_dashboard(
+                        refresh_token=refresh_token,
+                        timezone_name=request.timezone,
+                        days=days,
+                    )
+
+                cache_key = (
+                    "dashboard",
+                    session["email"].casefold(),
+                    request.timezone,
+                    request.range,
+                    date.today().isoformat(),
+                )
+                dashboard = _cached_dashboard(cache_key, load)
+            except RuntimeError:
+                yield _sse_event({"error": "No se pudieron leer tus datos de Google Health."})
+                return
+            yield _sse_event({"stage": "pensando", "label": "Pensando con tus métricas"})
+            for event in _assistant_stream(
+                question=request.question,
+                range_name=request.range,
+                timezone_name=request.timezone,
+                dashboard=dashboard,
+                hermes_client=hermes_client,
+                assistant_queue=assistant_queue,
+                wait_seconds=settings.hermes_bridge_wait_seconds,
+            ):
+                yield _sse_event(event)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
     def _require_bridge_key(candidate: str | None) -> None:
         if not bridge_ready:
             raise HTTPException(status_code=503, detail="Hermes bridge is not configured")
@@ -392,6 +471,15 @@ def create_app(
             suggestions=normalize_suggestions(payload.suggestions),
         )
         return {"accepted": accepted}
+
+    @app.post("/bridge/chunk")
+    def bridge_chunk(
+        payload: BridgeChunkRequest,
+        x_bridge_key: str | None = Header(default=None),
+    ) -> dict[str, bool]:
+        _require_bridge_key(x_bridge_key)
+        assert assistant_queue is not None
+        return {"accepted": assistant_queue.append_chunk(payload.jobId, payload.text)}
 
     @app.post("/bridge/enqueue")
     def bridge_enqueue(
@@ -451,6 +539,79 @@ def _assistant_answer(
     if reply is None:
         raise TimeoutError("Hermes bridge did not answer in time")
     return reply
+
+
+def _assistant_stream(
+    *,
+    question: str,
+    range_name: str,
+    timezone_name: str,
+    dashboard: dict,
+    hermes_client,
+    assistant_queue: AssistantQueue | None,
+    wait_seconds: float,
+    poll_seconds: float = 0.12,
+):
+    """Yield the events of one question: stages, text deltas, then the result.
+
+    The bridge writes the prose as the agent produces it and posts only the
+    part worth showing, so a delta here is text the user can read, never raw
+    JSON in transit.
+    """
+    if hermes_client is not None:
+        reply = parse_reply(hermes_client.ask(question=question, dashboard=dashboard))
+        if reply.chart:
+            yield {"stage": "grafico", "label": "Preparando el gráfico"}
+        yield {"delta": reply.answer}
+        yield {"done": reply.to_payload()}
+        return
+
+    if assistant_queue is None:
+        yield {"error": "El asistente no está configurado."}
+        return
+
+    job_id = assistant_queue.enqueue(
+        question=question,
+        range_name=range_name,
+        timezone=timezone_name,
+        dashboard=dashboard,
+    )
+    deadline = time.time() + wait_seconds
+    sent = 0
+    announced_writing = False
+    announced_chart = False
+
+    while time.time() < deadline:
+        state = assistant_queue.stream_state(job_id)
+        partial = state["partial"]
+        if len(partial) > sent:
+            if not announced_writing:
+                announced_writing = True
+                yield {"stage": "escribiendo", "label": "Escribiendo la respuesta"}
+            yield {"delta": partial[sent:]}
+            sent = len(partial)
+
+        reply = state["reply"]
+        if reply is not None:
+            if reply.chart and not announced_chart:
+                announced_chart = True
+                yield {"stage": "grafico", "label": "Preparando el gráfico"}
+            if sent == 0 and reply.answer:
+                # No chunks arrived (an old bridge, or a very short answer).
+                yield {"delta": reply.answer}
+            yield {"done": reply.to_payload()}
+            return
+
+        if state["gone"]:
+            yield {"error": "La pregunta caducó antes de responderse."}
+            return
+        time.sleep(poll_seconds)
+
+    yield {"error": "El asistente tardó demasiado en responder."}
+
+
+def _sse_event(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def _session_claims(authorization: str | None, settings: AppSettings) -> dict:

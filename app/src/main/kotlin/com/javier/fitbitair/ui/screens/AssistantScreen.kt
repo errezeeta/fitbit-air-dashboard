@@ -1,9 +1,18 @@
 package com.javier.fitbitair.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +32,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -34,12 +46,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +62,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.javier.fitbitair.domain.AssistantChart
 import com.javier.fitbitair.ui.components.ChatMiniChart
+import kotlinx.coroutines.delay
 
 sealed interface AssistantMessage {
     data class User(val text: String) : AssistantMessage
@@ -58,6 +74,12 @@ sealed interface AssistantMessage {
         val chart: AssistantChart? = null,
         /** Tappable follow-ups the agent proposed to keep the thread going. */
         val suggestions: List<String> = emptyList(),
+        /** True while the answer is still being written. */
+        val streaming: Boolean = false,
+        /** Machine name of the current step, e.g. "datos" or "escribiendo". */
+        val stage: String = "",
+        /** Human wording of that step, shown next to the animated indicator. */
+        val stageLabel: String = "",
     ) : AssistantMessage
 }
 
@@ -229,48 +251,129 @@ private fun MessageBubble(text: String, fromUser: Boolean) {
 @Composable
 private fun AgentBubble(message: AssistantMessage.Agent, onSend: (String) -> Unit, isBusy: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth(0.92f)) {
-        MessageBubble(message.text, fromUser = false)
-        message.chart?.let { chart ->
-            ChatMiniChart(chart, modifier = Modifier.padding(top = 2.dp))
+        if (message.streaming) {
+            AgentStageRow(message.stage, message.stageLabel)
+        }
+        if (message.text.isNotBlank()) {
+            MessageBubble(
+                text = if (message.streaming) "${message.text}▍" else message.text,
+                fromUser = false,
+            )
+        }
+        AnimatedVisibility(
+            visible = message.chart != null,
+            enter = fadeIn(tween(220)) + expandVertically(tween(260)),
+        ) {
+            message.chart?.let { chart ->
+                ChatMiniChart(chart, modifier = Modifier.padding(top = 2.dp))
+            }
         }
         if (message.suggestions.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                message.suggestions.forEach { suggestion ->
-                    AssistChip(
-                        onClick = { onSend(suggestion) },
-                        enabled = !isBusy,
-                        label = { Text(suggestion) },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Rounded.AutoAwesome,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        },
-                    )
+                message.suggestions.forEachIndexed { index, suggestion ->
+                    var visible by remember(message.text, suggestion) { mutableStateOf(false) }
+                    // Chips land one after another, like they were being offered.
+                    LaunchedEffect(message.text, suggestion) {
+                        delay(index * 70L)
+                        visible = true
+                    }
+                    AnimatedVisibility(
+                        visible = visible,
+                        enter = fadeIn(tween(200)) + slideInVertically(tween(220)) { it / 3 },
+                    ) {
+                        AssistChip(
+                            onClick = { onSend(suggestion) },
+                            enabled = !isBusy,
+                            label = { Text(suggestion) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Rounded.AutoAwesome,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(start = 8.dp),
-        ) {
-            Box(
-                Modifier
-                    .size(6.dp)
-                    .background(
-                        color = if (message.isDemo) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
-                        shape = CircleShape,
-                    ),
-            )
+        if (!message.streaming) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(start = 8.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .background(
+                            color = if (message.isDemo) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                            shape = CircleShape,
+                        ),
+                )
+                Text(
+                    message.usedData,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (message.isDemo) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** What the agent is doing right now, with a pulse so a slow turn still feels alive. */
+@Composable
+private fun AgentStageRow(stage: String, label: String) {
+    val transition = rememberInfiniteTransition(label = "agent-working")
+    val pulse by transition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(720, easing = LinearEasing), RepeatMode.Reverse),
+        label = "agent-pulse",
+    )
+    val spin by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
+        label = "agent-spin",
+    )
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        modifier = Modifier.padding(start = 8.dp, bottom = 2.dp),
+    ) {
+        Icon(
+            imageVector = stageIcon(stage),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier
+                .size(15.dp)
+                .alpha(pulse)
+                .rotate(if (stage == "pensando") spin else 0f),
+        )
+        AnimatedContent(
+            targetState = label,
+            transitionSpec = {
+                (fadeIn(tween(180)) + slideInVertically(tween(200)) { it / 2 }) togetherWith
+                    fadeOut(tween(120))
+            },
+            label = "agent-stage-label",
+        ) { current ->
             Text(
-                message.usedData,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (message.isDemo) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                current,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.tertiary,
             )
         }
     }
+}
+
+private fun stageIcon(stage: String) = when (stage) {
+    "datos" -> Icons.Rounded.CloudDownload
+    "escribiendo" -> Icons.Rounded.EditNote
+    "grafico" -> Icons.Rounded.Insights
+    else -> Icons.Rounded.AutoAwesome
 }
 
 private inline fun submit(draft: String, action: (String) -> Unit) {

@@ -23,7 +23,11 @@ import urllib.request
 # The reply-parsing contract lives with the backend so both paths agree on it.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.app.assistant_reply import ENVELOPE_INSTRUCTIONS, parse_reply  # noqa: E402
+from backend.app.assistant_reply import (
+    ENVELOPE_INSTRUCTIONS,
+    parse_streamed,
+    streamable_prefix,
+)  # noqa: E402
 
 BACKEND_URL = os.environ.get(
     "FITBIT_BACKEND_URL",
@@ -85,29 +89,64 @@ def call(path: str, payload: dict | None, key: str, method: str = "POST") -> dic
         return json.loads(response.read().decode("utf-8") or "{}")
 
 
-def ask_hermes(job: dict):
-    """Run one agent turn and return the parsed reply (prose + optional extras)."""
+def ask_hermes(job: dict, on_delta=None):
+    """Run one agent turn, forwarding the prose as it is written.
+
+    The CLI's stream-json mode emits a `text` event per token batch, so the
+    caller can relay readable text before the turn ends. Anything from the
+    delimiter onwards is metadata and is never sent as a delta.
+    """
     prompt = build_prompt(job)
     environment = dict(os.environ)
     environment["HERMES_HOME"] = HERMES_HOME
-    completed = subprocess.run(
-        [HERMES_BIN, "chat", "-q", prompt, "-Q"],
-        capture_output=True,
+    deadline = time.time() + ANSWER_TIMEOUT
+    process = subprocess.Popen(
+        [HERMES_BIN, "chat", "-q", prompt, "-Q", "--format", "stream-json"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
-        timeout=ANSWER_TIMEOUT,
         env=environment,
         cwd="/root",
+        bufsize=1,
     )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        raise RuntimeError(detail[-1] if detail else "hermes exited with an error")
-    answer = (completed.stdout or "").strip()
-    # `hermes chat -Q` prints the answer followed by a session_id footer.
-    lines = [line for line in answer.splitlines() if not line.startswith("session_id:")]
-    cleaned = "\n".join(lines).strip()
-    if not cleaned:
+
+    raw = ""
+    shown = 0
+    exit_code = 0
+    try:
+        for line in process.stdout:  # type: ignore[union-attr]
+            if time.time() > deadline:
+                process.kill()
+                raise RuntimeError("hermes did not finish in time")
+            line = line.strip()
+            if not line or line.startswith("session_id:"):
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if event.get("type") != "text" or not isinstance(event.get("text"), str):
+                continue
+            raw += event["text"]
+            if on_delta is None:
+                continue
+            visible = streamable_prefix(raw)
+            if len(visible) > shown:
+                on_delta(visible[shown:])
+                shown = len(visible)
+        exit_code = process.wait(timeout=30)
+    finally:
+        if process.poll() is None:
+            process.kill()
+
+    if exit_code != 0:
+        raise RuntimeError(f"hermes exited with code {exit_code}")
+    if not raw.strip():
         raise RuntimeError("hermes returned an empty answer")
-    return parse_reply(cleaned)
+    reply = parse_streamed(raw)
+    if not reply.answer.strip():
+        raise RuntimeError("hermes returned an empty answer")
+    return reply
 
 
 def main() -> int:
@@ -131,8 +170,25 @@ def main() -> int:
             continue
 
         started = time.time()
+        pending: list[str] = []
+
+        def flush_delta(chunk: str = "", force: bool = False) -> None:
+            """Relay readable text as it is written, in small batches."""
+            if chunk:
+                pending.append(chunk)
+            if not pending:
+                return
+            if not force and sum(len(part) for part in pending) < 60:
+                return
+            payload = "".join(pending)
+            pending.clear()
+            try:
+                call("/bridge/chunk", {"jobId": job["jobId"], "text": payload}, key)
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as error:
+                print(f"no se pudo enviar un trozo: {error}", flush=True)
+
         try:
-            reply = ask_hermes(job)
+            reply = ask_hermes(job, on_delta=flush_delta)
             extras = []
             if reply.chart:
                 extras.append(f"chart {reply.chart['kind']}×{len(reply.chart['points'])}")
@@ -144,7 +200,7 @@ def main() -> int:
                 flush=True,
             )
         except Exception as error:  # noqa: BLE001 - el puente nunca debe morir
-            reply = parse_reply(
+            reply = parse_streamed(
                 "No he podido generar la respuesta en este momento. "
                 "Inténtalo de nuevo en unos minutos."
             )

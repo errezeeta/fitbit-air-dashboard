@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 
 import httpx
@@ -244,6 +245,68 @@ class BridgeEndpointTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(response.json()["chart"])
         self.assertEqual("Sin gráfico válido.", response.json()["answer"])
 
+    async def test_the_stream_endpoint_reports_stages_and_text_as_it_arrives(self):
+        session = _session_token("server-only-session-secret")
+
+        async def answer_worker() -> None:
+            for _ in range(200):
+                claim = await self.client.post(
+                    "/bridge/claim", headers={"X-Bridge-Key": BRIDGE_KEY}
+                )
+                job = claim.json()["job"]
+                if job:
+                    for piece in ["Dormiste ", "7 h 30 min", " de media."]:
+                        await self.client.post(
+                            "/bridge/chunk",
+                            headers={"X-Bridge-Key": BRIDGE_KEY},
+                            json={"jobId": job["jobId"], "text": piece},
+                        )
+                        await asyncio.sleep(0.02)
+                    await self.client.post(
+                        "/bridge/answer",
+                        headers={"X-Bridge-Key": BRIDGE_KEY},
+                        json={
+                            "jobId": job["jobId"],
+                            "answer": "Dormiste 7 h 30 min de media.",
+                            "chart": {
+                                "kind": "bars",
+                                "title": "Sueño",
+                                "points": [
+                                    {"label": "L", "value": 430, "date": "2026-10-12"},
+                                    {"label": "M", "value": 470, "date": "2026-10-13"},
+                                ],
+                            },
+                            "suggestions": ["¿Y el mes pasado?"],
+                        },
+                    )
+                    return
+                await asyncio.sleep(0.02)
+
+        worker = asyncio.create_task(answer_worker())
+        response = await self.client.post(
+            "/api/assistant/stream",
+            headers={"Authorization": f"Bearer {session}"},
+            json={"question": "¿Cómo dormí?", "range": "week", "timezone": "Europe/Madrid"},
+        )
+        await worker
+
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.headers["content-type"].startswith("text/event-stream"))
+        events = [
+            json.loads(line.removeprefix("data: "))
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        stages = [event["stage"] for event in events if "stage" in event]
+        self.assertEqual(["datos", "pensando", "escribiendo", "grafico"], stages)
+        streamed = "".join(event["delta"] for event in events if "delta" in event)
+        self.assertEqual("Dormiste 7 h 30 min de media.", streamed)
+        done = [event["done"] for event in events if "done" in event][-1]
+        self.assertEqual("Dormiste 7 h 30 min de media.", done["answer"])
+        self.assertEqual("bars", done["chart"]["kind"])
+        self.assertEqual(["¿Y el mes pasado?"], done["suggestions"])
+        self.assertNotIn(BRIDGE_KEY, response.text)
+
     async def test_the_self_test_endpoint_queues_without_an_app_session(self):
         queued = await self.client.post(
             "/bridge/enqueue",
@@ -309,8 +372,11 @@ class BridgePromptTest(unittest.TestCase):
 
         self.assertIn("¿Cuántos pasos he dado?", prompt)
         self.assertIn("8420", prompt)
-        self.assertIn('"answer"', prompt)
+        # The streamed layout: prose first, delimiter, then the extras.
+        self.assertIn("§§", prompt)
+        self.assertIn('"chart"', prompt)
         self.assertIn('"points"', prompt)
+        self.assertIn("Escribe primero tu respuesta en texto normal", prompt)
         self.assertNotIn("{question}", prompt)
 
 

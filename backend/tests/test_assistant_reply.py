@@ -6,6 +6,8 @@ from backend.app.assistant_reply import (
     normalize_chart,
     normalize_suggestions,
     parse_reply,
+    parse_streamed,
+    streamable_prefix,
 )
 
 
@@ -57,6 +59,50 @@ class ParseReplyTest(unittest.TestCase):
 
     def test_empty_input_is_an_empty_answer(self):
         self.assertEqual("", parse_reply("   ").answer)
+
+
+class StreamedReplyTest(unittest.TestCase):
+    def test_prose_before_the_delimiter_and_extras_after_it(self):
+        reply = parse_streamed(
+            "Dormiste 7 h 30 min de media.\n\n§§\n"
+            '{"chart": {"kind": "bars", "points": [{"label": "L", "value": 1}, {"label": "M", "value": 2}]}, '
+            '"suggestions": ["¿Y el mes pasado?"]}'
+        )
+
+        self.assertEqual("Dormiste 7 h 30 min de media.", reply.answer)
+        self.assertEqual("bars", reply.chart["kind"])
+        self.assertEqual(["¿Y el mes pasado?"], reply.suggestions)
+
+    def test_without_a_delimiter_it_falls_back_to_the_envelope_parser(self):
+        reply = parse_streamed('{"answer": "Hola", "suggestions": ["sigue"]}')
+
+        self.assertEqual("Hola", reply.answer)
+        self.assertEqual(["sigue"], reply.suggestions)
+
+    def test_without_a_delimiter_plain_prose_is_the_answer(self):
+        self.assertEqual("Solo texto.", parse_streamed("Solo texto.").answer)
+
+    def test_a_broken_metadata_block_still_leaves_the_prose(self):
+        reply = parse_streamed("Buenas noches.\n§§\n{\"chart\": {\"kind\":")
+
+        self.assertEqual("Buenas noches.", reply.answer)
+        self.assertIsNone(reply.chart)
+
+
+class StreamablePrefixTest(unittest.TestCase):
+    def test_prose_is_visible_as_it_grows(self):
+        self.assertEqual("Dormiste", streamable_prefix("Dormiste"))
+        self.assertEqual("Dormiste 7 h", streamable_prefix("Dormiste 7 h"))
+
+    def test_a_lone_delimiter_character_already_hides_the_rest(self):
+        # The delimiter arrives one character at a time; the visible cut must
+        # not wait for the second one or a stray § flashes in the bubble.
+        self.assertEqual("Listo.", streamable_prefix("Listo.§"))
+        self.assertEqual("Listo.", streamable_prefix("Listo.§§{\"chart\": null}"))
+
+    def test_an_envelope_in_transit_is_not_shown(self):
+        self.assertEqual("", streamable_prefix('{"answer": "Hola'))
+        self.assertEqual("", streamable_prefix("```json\n{\"answer\""))
 
 
 class NormalizeChartTest(unittest.TestCase):

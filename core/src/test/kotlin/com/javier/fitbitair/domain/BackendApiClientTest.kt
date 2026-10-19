@@ -42,6 +42,21 @@ class BackendApiClientTest {
             posts += Triple(path, bearerToken, body)
             return responses.removeFirst()
         }
+
+        val eventStreams = mutableListOf<Pair<String, List<String>>>()
+
+        override fun postEvents(
+            path: String,
+            body: String,
+            bearerToken: String?,
+            onEvent: (String) -> Unit,
+        ) {
+            val lines = eventStreams.removeFirstOrNull()?.second ?: emptyList()
+            eventStreamsUsed += path
+            lines.forEach(onEvent)
+        }
+
+        val eventStreamsUsed = mutableListOf<String>()
     }
 
     @Test

@@ -13,6 +13,14 @@ import java.util.Base64
 interface BackendTransport {
     fun get(path: String, bearerToken: String? = null): BackendHttpResult
     fun post(path: String, body: String, bearerToken: String? = null): BackendHttpResult
+
+    /** Streams an event stream, handing over each event's data as it arrives. */
+    fun postEvents(
+        path: String,
+        body: String,
+        bearerToken: String? = null,
+        onEvent: (String) -> Unit,
+    )
 }
 
 data class BackendHttpResult(val statusCode: Int, val body: String)
@@ -132,6 +140,28 @@ class BackendApiClient(
         val answer = AssistantAnswerParser.parse(json)
         return answer.takeIf { it.text.isNotBlank() }
             ?: throw BackendApiException("El asistente devolvió una respuesta vacía")
+    }
+
+    /** Streams the answer: stages, text deltas and the final payload. */
+    fun askAssistantStreaming(
+        question: String,
+        range: TrendRange,
+        timezone: String,
+        onEvent: (AssistantStreamEvent) -> Unit,
+    ) {
+        val session = credentials.loadSessionToken()
+            ?: throw BackendApiException("Conecta Google Health antes de usar el asistente")
+        val rangeName = if (range == TrendRange.WEEK) "week" else "month"
+        val body = gson.toJson(
+            mapOf(
+                "question" to question,
+                "range" to rangeName,
+                "timezone" to timezone,
+            ),
+        )
+        transport.postEvents("/api/assistant/stream", body, session) { line ->
+            AssistantStreamParser.parse(line)?.let(onEvent)
+        }
     }
 
     private fun randomUrlSafe(byteCount: Int): String {

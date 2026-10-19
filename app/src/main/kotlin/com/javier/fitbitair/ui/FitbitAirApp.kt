@@ -93,6 +93,8 @@ fun FitbitAirApp(
     onAskAssistant: suspend (String, TrendRange) -> com.javier.fitbitair.domain.AssistantAnswer = { _, _ ->
         com.javier.fitbitair.domain.AssistantAnswer(text = "El asistente todavía no está disponible.")
     },
+    /** Streamed variant: stages and text as the agent produces them. */
+    onAskAssistantStreaming: suspend (String, TrendRange, (com.javier.fitbitair.domain.AssistantStreamEvent) -> Unit) -> Unit = { _, _, _ -> },
 ) {
     val stateStore = remember(stepGoalStore) {
         DashboardUiStateStore().apply { setStepGoal(stepGoalStore.getGoal()) }
@@ -321,27 +323,84 @@ fun FitbitAirApp(
                                     else -> {
                                         val selectedRange = uiState.range
                                         chat += AssistantMessage.Agent(
-                                            text = "Consultando tus métricas…",
+                                            text = "",
                                             usedData = "Google Health · ${selectedRange.label}",
                                             isDemo = false,
+                                            streaming = true,
+                                            stageLabel = "Preparando la consulta",
                                         )
                                         val answerIndex = chat.lastIndex
                                         assistantBusy = true
-                                        coroutineScope.launch {
-                                            val answer = try {
-                                                onAskAssistant(message, selectedRange)
+                                        val events = kotlinx.coroutines.channels.Channel<
+                                            com.javier.fitbitair.domain.AssistantStreamEvent
+                                            >(kotlinx.coroutines.channels.Channel.UNLIMITED)
+                                        // The transport runs on IO and only pushes events;
+                                        // the bubble is updated on the main thread in order.
+                                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                            try {
+                                                onAskAssistantStreaming(message, selectedRange) { event ->
+                                                    events.trySend(event)
+                                                }
                                             } catch (_: Exception) {
-                                                com.javier.fitbitair.domain.AssistantAnswer(
-                                                    text = "No se pudo consultar el asistente. Inténtalo de nuevo más tarde.",
+                                                events.trySend(
+                                                    com.javier.fitbitair.domain.AssistantStreamEvent.Failure(
+                                                        "No se pudo consultar el asistente. Inténtalo de nuevo más tarde."
+                                                    )
                                                 )
+                                            } finally {
+                                                events.close()
                                             }
-                                            chat[answerIndex] = AssistantMessage.Agent(
-                                                text = answer.text,
-                                                usedData = "Google Health · ${selectedRange.label}",
-                                                isDemo = false,
-                                                chart = answer.chart,
-                                                suggestions = answer.suggestions,
-                                            )
+                                        }
+                                        coroutineScope.launch {
+                                            val streamed = StringBuilder()
+                                            var closed = false
+                                            for (event in events) {
+                                                val bubble = chat.getOrNull(answerIndex) as? AssistantMessage.Agent
+                                                    ?: break
+                                                when (event) {
+                                                    is com.javier.fitbitair.domain.AssistantStreamEvent.Stage ->
+                                                        chat[answerIndex] = bubble.copy(
+                                                            stage = event.id,
+                                                            stageLabel = event.label,
+                                                        )
+                                                    is com.javier.fitbitair.domain.AssistantStreamEvent.Delta -> {
+                                                        streamed.append(event.text)
+                                                        chat[answerIndex] = bubble.copy(
+                                                            text = streamed.toString(),
+                                                            stage = "escribiendo",
+                                                        )
+                                                    }
+                                                    is com.javier.fitbitair.domain.AssistantStreamEvent.Done -> {
+                                                        closed = true
+                                                        chat[answerIndex] = bubble.copy(
+                                                            text = event.answer.text.ifBlank { streamed.toString() },
+                                                            chart = event.answer.chart,
+                                                            suggestions = event.answer.suggestions,
+                                                            streaming = false,
+                                                        )
+                                                    }
+                                                    is com.javier.fitbitair.domain.AssistantStreamEvent.Failure -> {
+                                                        closed = true
+                                                        chat[answerIndex] = bubble.copy(
+                                                            text = event.message,
+                                                            isDemo = true,
+                                                            streaming = false,
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            if (!closed) {
+                                                val bubble = chat.getOrNull(answerIndex) as? AssistantMessage.Agent
+                                                if (bubble != null) {
+                                                    chat[answerIndex] = bubble.copy(
+                                                        text = streamed.toString().ifBlank {
+                                                            "El asistente no devolvió respuesta. Inténtalo de nuevo."
+                                                        },
+                                                        streaming = false,
+                                                        isDemo = streamed.isEmpty(),
+                                                    )
+                                                }
+                                            }
                                             assistantBusy = false
                                         }
                                     }

@@ -30,21 +30,26 @@ MAX_LABEL_CHARS = 8
 MAX_SUGGESTION_CHARS = 60
 CHART_KINDS = ("bars", "line")
 
-# Appended to whatever persona the runtime uses, so both the bridge profile and
-# the direct Hermes API path ask for the same shape.
-ENVELOPE_INSTRUCTIONS = """
+# The streamed layout: prose first so it can be read as it is written, then the
+# extras after a delimiter line, which the user never sees.
+ENVELOPE_DELIMITER = "§§"
+
+ENVELOPE_INSTRUCTIONS = f"""
 Formato de respuesta (importante):
-- Responde SIEMPRE con un único objeto JSON, sin texto alrededor ni ```:
-  {"answer": "<tu respuesta en 2 a 4 frases>", "chart": <objeto o null>, "suggestions": [<hasta 3 frases cortas>]}
+- Escribe primero tu respuesta en texto normal, en 2 a 4 frases, sin JSON ni llaves.
+- Después escribe una línea que contenga exactamente: {ENVELOPE_DELIMITER}
+- Después escribe un único objeto JSON con lo opcional:
+  {{"chart": <objeto o null>, "suggestions": [<hasta 3 frases cortas>]}}
 - "chart": úsalo solo si un gráfico deja la respuesta más clara. Si no aporta, pon null.
-  Forma: {"kind": "bars"|"line", "title": "<título corto>", "unit": "<unidad>",
-          "points": [{"label": "<etiqueta corta>", "value": <número>, "date": "<YYYY-MM-DD>"}],
-          "goal": <número o null>}
+  Forma: {{"kind": "bars"|"line", "title": "<título corto>", "unit": "<unidad>",
+          "points": [{{"label": "<etiqueta corta>", "value": <número>, "date": "<YYYY-MM-DD>"}}],
+          "goal": <número o null>}}
   Usa como máximo 31 puntos y SOLO números que aparezcan en el resumen de métricas
   que se te ha dado: no inventes ni calcules cifras nuevas.
 - "suggestions": 0 a 3 preguntas cortas de seguimiento que el usuario podría tocar.
 - Nunca incluyas consejo médico ni diagnósticos.
 """.strip()
+
 
 
 def parse_reply(raw: str) -> AssistantReply:
@@ -66,6 +71,44 @@ def parse_reply(raw: str) -> AssistantReply:
         chart=normalize_chart(payload.get("chart")),
         suggestions=normalize_suggestions(payload.get("suggestions")),
     )
+
+
+def parse_streamed(raw: str) -> AssistantReply:
+    """Parse the streamed layout: prose, a delimiter line, then the extras.
+
+    Falls back to `parse_reply` whenever the delimiter is missing, so a model
+    that ignores the format still produces a usable answer.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return AssistantReply(answer="", suggestions=[])
+    head, delimiter, tail = text.partition(ENVELOPE_DELIMITER)
+    if not delimiter:
+        return parse_reply(text)
+    extras = _extract_json_object(tail) or {}
+    return AssistantReply(
+        answer=_strip_fences(head.strip()),
+        chart=normalize_chart(extras.get("chart")),
+        suggestions=normalize_suggestions(extras.get("suggestions")),
+    )
+
+
+def streamable_prefix(raw: str) -> str:
+    """How much of a partial answer is safe to show while it is being written.
+
+    Anything from the delimiter onwards is metadata, and a reply that starts
+    with an envelope (a model that ignored the layout) is not readable prose:
+    in both cases the caller shows nothing new. The delimiter arrives one
+    character at a time, so the cut is made at its first character.
+    """
+    head, _, _ = raw.partition(ENVELOPE_DELIMITER)
+    marker = head.find(ENVELOPE_DELIMITER[0])
+    if marker >= 0:
+        head = head[:marker]
+    stripped = head.lstrip()
+    if stripped.startswith("{") or stripped.startswith("```"):
+        return ""
+    return head
 
 
 def normalize_chart(candidate: Any) -> dict | None:

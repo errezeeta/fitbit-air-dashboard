@@ -90,6 +90,18 @@ class MainActivity : ComponentActivity() {
                             ) ?: throw IllegalStateException("El backend de Cloud Run aún no está configurado.")
                         }
                     },
+                    onAskAssistantStreaming = { question, range, onEvent ->
+                        withContext(Dispatchers.IO) {
+                            val client = backendClient
+                                ?: throw IllegalStateException("El backend de Cloud Run aún no está configurado.")
+                            client.askAssistantStreaming(
+                                question = question,
+                                range = range,
+                                timezone = ZoneId.systemDefault().id,
+                                onEvent = onEvent,
+                            )
+                        }
+                    },
                 )
             }
         }
