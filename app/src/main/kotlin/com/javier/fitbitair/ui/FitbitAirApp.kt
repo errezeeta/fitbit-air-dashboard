@@ -180,9 +180,15 @@ fun FitbitAirApp(
             CenterAlignedTopAppBar(
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Salud diaria", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text("Fitbit Air", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (uiState.destination == DashboardDestination.SETTINGS) "Preferencias" else "Fitbit Air",
+                            detailMetric?.title ?: when (uiState.destination) {
+                                DashboardDestination.HOME -> "Inicio"
+                                DashboardDestination.SLEEP -> "Sueño"
+                                DashboardDestination.ACTIVITY -> "Actividad"
+                                DashboardDestination.ASSISTANT -> "Asistente"
+                                DashboardDestination.SETTINGS -> "Ajustes"
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -178,7 +178,11 @@ fun AssistantScreen(
                     }
                 }
             }
-            itemsIndexed(messages) { _, message ->
+            itemsIndexed(
+                items = messages,
+                key = { index, _ -> index },
+                contentType = { _, message -> if (message is AssistantMessage.User) "user" else "agent" },
+            ) { _, message ->
                 MessageEntrance(
                     fromUser = message is AssistantMessage.User,
                     modifier = Modifier.animateItem(),

@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Flag
@@ -41,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.javier.fitbitair.data.AppUpdater
+import com.javier.fitbitair.ui.components.formatStepsCount
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -79,9 +81,9 @@ fun SettingsScreen(
             title = "Google Health",
             subtitle = when {
                 !backendConfigured -> "Cloud Run aún no está configurado."
-                !googleOAuthConfigured -> "El servidor está desplegado, pero falta completar la configuración OAuth."
-                googleConnected -> "Conectado · métricas consultadas a demanda."
-                else -> "No conectado · autoriza tu cuenta para leer pasos, sueño y pulso."
+                !googleOAuthConfigured -> "El servidor está desplegado, pero falta completar la autorización de Google."
+                googleConnected -> "Conectado · pasos, sueño y pulso se consultan cuando los necesitas."
+                else -> "Desconectado · conecta tu cuenta para consultar pasos, sueño y pulso."
             },
             icon = {
                 Icon(
@@ -102,7 +104,7 @@ fun SettingsScreen(
             } else {
                 "Pendiente · falta enlazar el API Server de forma segura por HTTPS."
             },
-            icon = { Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            icon = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
         )
         connectionMessage?.let { message ->
             Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -196,6 +198,11 @@ private sealed interface UpdateUiState {
     data object UpToDate : UpdateUiState
     data object Downloading : UpdateUiState
     data class Available(val update: AppUpdater.AvailableUpdate) : UpdateUiState
+    data class Failed(
+        val message: String,
+        val actionLabel: String,
+        val onRetry: () -> Unit,
+    ) : UpdateUiState
     data class ReadyToInstall(val prep: AppUpdater.InstallPreparation) : UpdateUiState
 }
 
@@ -209,12 +216,47 @@ private fun SoftwareUpdateCard(updater: AppUpdater?, appVersionName: String) {
     var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        if (updater == null) return@LaunchedEffect
+    fun checkForUpdate() {
+        val client = updater
+        if (client == null) {
+            state = UpdateUiState.Failed(
+                message = "El actualizador no está disponible en esta instalación.",
+                actionLabel = "Reintentar",
+                onRetry = {},
+            )
+            return
+        }
         state = UpdateUiState.Checking
-        val update = runCatching { updater.checkForUpdate() }.getOrNull()
-        state = update?.let(UpdateUiState::Available) ?: UpdateUiState.UpToDate
+        coroutineScope.launch {
+            state = try {
+                client.checkForUpdate()?.let(UpdateUiState::Available) ?: UpdateUiState.UpToDate
+            } catch (_: Exception) {
+                UpdateUiState.Failed(
+                    message = "No se pudo comprobar la versión. Revisa tu conexión.",
+                    actionLabel = "Reintentar",
+                    onRetry = ::checkForUpdate,
+                )
+            }
+        }
     }
+
+    fun downloadUpdate(update: AppUpdater.AvailableUpdate) {
+        val client = updater ?: return
+        state = UpdateUiState.Downloading
+        coroutineScope.launch {
+            state = try {
+                UpdateUiState.ReadyToInstall(client.download(update))
+            } catch (_: Exception) {
+                UpdateUiState.Failed(
+                    message = "No se pudo descargar la actualización. Revisa tu conexión.",
+                    actionLabel = "Reintentar descarga",
+                    onRetry = { downloadUpdate(update) },
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(updater) { checkForUpdate() }
 
     ElevatedCard(shape = RoundedCornerShape(26.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -245,6 +287,14 @@ private fun SoftwareUpdateCard(updater: AppUpdater?, appVersionName: String) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                is UpdateUiState.Failed -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        snapshot.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    TextButton(onClick = snapshot.onRetry) { Text(snapshot.actionLabel) }
+                }
                 UpdateUiState.Downloading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
@@ -252,18 +302,9 @@ private fun SoftwareUpdateCard(updater: AppUpdater?, appVersionName: String) {
                     )
                     Text("Descargando actualización…", style = MaterialTheme.typography.bodySmall)
                 }
-                is UpdateUiState.Available -> TextButton(onClick = {
-                    val updaterInstance = updater ?: return@TextButton
-                    state = UpdateUiState.Downloading
-                    coroutineScope.launch {
-                        try {
-                            val prep = updaterInstance.download(snapshot.update)
-                            state = UpdateUiState.ReadyToInstall(prep)
-                        } catch (_: Exception) {
-                            state = UpdateUiState.Available(snapshot.update)
-                        }
-                    }
-                }) { Text("Instalar ${snapshot.update.versionName}") }
+                is UpdateUiState.Available -> TextButton(onClick = { downloadUpdate(snapshot.update) }) {
+                    Text("Instalar ${snapshot.update.versionName}")
+                }
                 is UpdateUiState.ReadyToInstall -> InstallAction(updater, snapshot.prep)
             }
         }
@@ -271,7 +312,7 @@ private fun SoftwareUpdateCard(updater: AppUpdater?, appVersionName: String) {
 }
 
 
-private fun formatGoal(value: Int): String = value.toString().reversed().chunked(3).joinToString(" ").reversed()
+private fun formatGoal(value: Int): String = formatStepsCount(value)
 
 /**
  * Two-step install: Android only lets an app launch the package installer once

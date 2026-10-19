@@ -1,5 +1,6 @@
 package com.javier.fitbitair.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -111,23 +113,34 @@ fun MetricDetailScreen(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                when (kind) {
-                    MetricKind.STEPS -> StepsBarChart(
-                        data.stepsTrend,
-                        goal = stepGoal,
-                        onOpenDay = onOpenDay,
+                val hasTrend = points.isNotEmpty()
+                if (!hasTrend) {
+                    MetricEmptyState(kind.title.lowercase())
+                } else {
+                    when (kind) {
+                        MetricKind.STEPS -> StepsBarChart(
+                            data.stepsTrend,
+                            goal = stepGoal,
+                            onOpenDay = onOpenDay,
+                        )
+                        MetricKind.DISTANCE -> DistanceBarChart(data.distanceTrend, onOpenDay = onOpenDay)
+                        MetricKind.SLEEP -> Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
+                            SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
+                        }
+                        MetricKind.HEART -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay)
+                            HeartRateDistribution(data.heartRateTrend.map { it.beatsPerMinute })
+                        }
+                    }
+                    Hint(
+                        if (kind == MetricKind.HEART) {
+                            "Mantén pulsado un punto para abrir el día"
+                        } else {
+                            "Toca una barra para seleccionar el día · mantén pulsado para abrir su ficha"
+                        },
                     )
-                    MetricKind.DISTANCE -> DistanceBarChart(data.distanceTrend, onOpenDay = onOpenDay)
-                    MetricKind.SLEEP -> Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
-                        SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
-                    }
-                    MetricKind.HEART -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay)
-                        HeartRateDistribution(data.heartRateTrend.map { it.beatsPerMinute })
-                    }
                 }
-                Hint("Toca una barra para ver ese día · mantén pulsado para abrir su ficha")
             }
         }
 
@@ -333,6 +346,26 @@ private fun StatLine(label: String, value: String, note: String? = null) {
             }
         }
         Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun MetricEmptyState(metric: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 14.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f))
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Aún no hay datos de ${metric}.", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Cuando Google Health registre lecturas, aparecerán aquí.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
