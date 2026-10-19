@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -147,7 +150,17 @@ fun FitbitAirApp(
         }
     }
 
+    var handledReloadToken by remember { mutableStateOf(0) }
     LaunchedEffect(uiState.range, reloadToken, dataRevision, googleConnected) {
+        val forced = reloadToken != handledReloadToken
+        if (!forced &&
+            !stateStore.needsReload(revision = dataRevision, connected = googleConnected)
+        ) {
+            // Data loaded moments ago: sliding between sections or flipping the
+            // range back must not turn into another four Google round trips.
+            return@LaunchedEffect
+        }
+        handledReloadToken = reloadToken
         // Keep whatever the last good load painted and refresh behind it; a
         // blank skeleton only shows on a first run with nothing cached.
         stateStore.beginRefresh()
@@ -157,7 +170,7 @@ fun FitbitAirApp(
         } catch (error: Exception) {
             DashboardState.Error(error.message ?: "No se pudieron cargar los datos.")
         }
-        stateStore.updateDashboard(loaded)
+        stateStore.updateDashboard(loaded, revision = dataRevision, connected = googleConnected)
         uiState = stateStore.state
     }
 
@@ -250,33 +263,38 @@ fun FitbitAirApp(
             }
             val openDetail = detailMetric
             if (openDetail != null) {
-                AnimatedContent(targetState = uiState.dashboard, modifier = Modifier.weight(1f), label = "detail-transition") { state ->
-                    DashboardContent(state, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
-                        MetricDetailScreen(
-                            kind = openDetail,
-                            data = data,
-                            range = uiState.range,
-                            stepGoal = uiState.stepGoal,
-                            onRangeChange = ::changeRange,
-                            onOpenDay = { daySheet = it },
-                        )
+                com.javier.fitbitair.ui.components.SlideInFromEnd(modifier = Modifier.weight(1f)) {
+                    AnimatedContent(targetState = uiState.dashboard, label = "detail-transition") { state ->
+                        DashboardContent(state, isRefreshing = uiState.refreshing, onRefresh = { stateStore.markStale(); reloadToken++ }) { data ->
+                            MetricDetailScreen(
+                                kind = openDetail,
+                                data = data,
+                                range = uiState.range,
+                                stepGoal = uiState.stepGoal,
+                                onRangeChange = ::changeRange,
+                                onOpenDay = { daySheet = it },
+                            )
+                        }
                     }
                 }
                 return@Column
             }
             // Tabs live in a horizontal pager: the same screens, but you can
-            // slide between them instead of only tapping the bar.
+            // slide between them instead of only tapping the bar. Settings is
+            // the only other state, so swiping never rebuilds the pager (which
+            // used to re-run a screen transition on every slide).
             AnimatedContent(
-                targetState = uiState.destination,
+                targetState = uiState.destination == DashboardDestination.SETTINGS,
                 modifier = Modifier.weight(1f),
                 transitionSpec = {
-                    (fadeIn() + slideInHorizontally { it / 16 }) togetherWith
-                        (fadeOut() + slideOutHorizontally { -it / 20 })
+                    (fadeIn() + slideInHorizontally { it / 8 }) togetherWith
+                        (fadeOut() + slideOutHorizontally { -it / 12 })
                 },
-                label = "screen-transition",
-            ) { destination ->
-                if (destination == DashboardDestination.SETTINGS) {
-                    SettingsScreen(
+                label = "settings-transition",
+            ) { settingsOpen ->
+                if (settingsOpen) {
+                    com.javier.fitbitair.ui.components.SlideInFromEnd {
+                        SettingsScreen(
                         stepGoal = uiState.stepGoal,
                         onStepGoalChange = ::updateStepGoal,
                         backendConfigured = backendConfigured,
@@ -286,12 +304,12 @@ fun FitbitAirApp(
                         connectionMessage = connectionMessage,
                         onConnectGoogleHealth = onConnectGoogleHealth,
                         updater = updater,
-                    )
+                        )
+                    }
                 } else {
                     val tabs = appTabs
-                    val pagerState = rememberPagerState(
-                        initialPage = tabs.indexOf(destination).coerceAtLeast(0),
-                    ) { tabs.size }
+                    val currentTab = tabs.indexOf(uiState.destination).coerceAtLeast(0)
+                    val pagerState = rememberPagerState(initialPage = currentTab) { tabs.size }
                     // Swiping and the bottom bar move the same state, one hop.
                     LaunchedEffect(pagerState) {
                         snapshotFlow { pagerState.settledPage }.collect { page ->
@@ -299,9 +317,11 @@ fun FitbitAirApp(
                             if (next != uiState.destination) select(next)
                         }
                     }
-                    LaunchedEffect(destination) {
-                        val target = tabs.indexOf(destination)
-                        if (target >= 0 && target != pagerState.currentPage) {
+                    LaunchedEffect(uiState.destination) {
+                        val target = tabs.indexOf(uiState.destination)
+                        // targetPage, not currentPage: after a swipe the pager is
+                        // already heading there and must not animate twice.
+                        if (target >= 0 && target != pagerState.targetPage) {
                             pagerState.animateScrollToPage(target)
                         }
                     }
@@ -312,7 +332,7 @@ fun FitbitAirApp(
                         key = { page -> tabs[page] },
                     ) { page ->
                         when (tabs[page]) {
-                            DashboardDestination.HOME -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
+                            DashboardDestination.HOME -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { stateStore.markStale(); reloadToken++ }) { data ->
                         HomeScreen(
                             data = data,
                             stepGoal = uiState.stepGoal,
@@ -324,7 +344,7 @@ fun FitbitAirApp(
                             onOpenDay = { daySheet = it },
                         )
                     }
-                    DashboardDestination.SLEEP -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
+                    DashboardDestination.SLEEP -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { stateStore.markStale(); reloadToken++ }) { data ->
                         SleepScreen(
                             data = data,
                             range = uiState.range,
@@ -333,7 +353,7 @@ fun FitbitAirApp(
                             onOpenDay = { daySheet = it },
                         )
                     }
-                    DashboardDestination.ACTIVITY -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { reloadToken++ }) { data ->
+                    DashboardDestination.ACTIVITY -> DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { stateStore.markStale(); reloadToken++ }) { data ->
                         ActivityScreen(
                             data = data,
                             stepGoal = uiState.stepGoal,
@@ -520,15 +540,26 @@ private fun DataSourceBanner(backendConfigured: Boolean, googleConnected: Boolea
 
 @Composable
 private fun LoadingScreen() {
-    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "loading-pulse")
-    val alpha by transition.animateFloat(
-        initialValue = 0.42f,
-        targetValue = 0.78f,
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "loading-shimmer")
+    val sweep by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
         animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(900),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
+            animation = androidx.compose.animation.core.tween(
+                1300,
+                easing = androidx.compose.animation.core.LinearEasing,
+            ),
         ),
-        label = "skeleton-alpha",
+        label = "shimmer-sweep",
+    )
+    val base = MaterialTheme.colorScheme.surfaceContainerHighest
+    val highlight = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.8f)
+    // A band that travels across the placeholders reads as work in progress;
+    // a flat pulsing block reads as a frozen screen.
+    val shimmer = androidx.compose.ui.graphics.Brush.linearGradient(
+        colors = listOf(base, highlight, base),
+        start = androidx.compose.ui.geometry.Offset(sweep * 1500f - 750f, 0f),
+        end = androidx.compose.ui.geometry.Offset(sweep * 1500f, 0f),
     )
     Column(
         modifier = Modifier
@@ -536,16 +567,16 @@ private fun LoadingScreen() {
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Consultando datos…", style = MaterialTheme.typography.titleMedium)
+        Text("Consultando tus datos…", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(2.dp))
-        repeat(3) {
-            androidx.compose.material3.Surface(
+        listOf(148.dp, 92.dp, 148.dp).forEach { blockHeight ->
+            androidx.compose.foundation.layout.Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-            ) {}
+                    .height(blockHeight)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(shimmer),
+            )
         }
     }
 }

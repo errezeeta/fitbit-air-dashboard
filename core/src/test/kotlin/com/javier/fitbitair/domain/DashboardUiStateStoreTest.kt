@@ -83,6 +83,51 @@ class DashboardUiStateStoreTest {
     }
 
     @Test
+    fun needsReloadIsFalseRightAfterALoadAndTrueOnceTheWindowPasses() {
+        val store = DashboardUiStateStore()
+        store.updateDashboard(ready, revision = 0, connected = true, atMillis = 1_000L)
+
+        // Same revision and connection, well inside the window: nothing to fetch.
+        assertEquals(false, store.needsReload(revision = 0, connected = true, nowMillis = 5_000L))
+        // Past the window, the data is stale enough to ask again.
+        assertEquals(true, store.needsReload(revision = 0, connected = true, nowMillis = 99_000L))
+    }
+
+    @Test
+    fun needsReloadIsTrueOnAFreshStoreOrWhenSomethingActuallyChanged() {
+        val store = DashboardUiStateStore()
+        // Nothing loaded yet.
+        assertEquals(true, store.needsReload(revision = 0, connected = false, nowMillis = 1_000L))
+
+        store.updateDashboard(ready, revision = 3, connected = false, atMillis = 1_000L)
+        // A new revision (re-authorization) invalidates what is on screen.
+        assertEquals(true, store.needsReload(revision = 4, connected = false, nowMillis = 2_000L))
+        assertEquals(true, store.needsReload(revision = 3, connected = true, nowMillis = 2_000L))
+        assertEquals(false, store.needsReload(revision = 3, connected = false, nowMillis = 2_000L))
+    }
+
+    @Test
+    fun markStaleForcesTheNextLoadEvenInsideTheWindow() {
+        val store = DashboardUiStateStore()
+        store.updateDashboard(ready, revision = 0, connected = false, atMillis = 1_000L)
+        assertEquals(false, store.needsReload(revision = 0, connected = false, nowMillis = 2_000L))
+
+        store.markStale()
+
+        assertEquals(true, store.needsReload(revision = 0, connected = false, nowMillis = 2_000L))
+    }
+
+    @Test
+    fun eachRangeKeepsItsOwnFreshnessWindow() {
+        val store = DashboardUiStateStore()
+        store.updateDashboard(ready, revision = 0, connected = false, atMillis = 1_000L)
+        store.changeRange(TrendRange.MONTH)
+
+        // The month range was never loaded, so it must go out.
+        assertEquals(true, store.needsReload(revision = 0, connected = false, nowMillis = 2_000L))
+    }
+
+    @Test
     fun errorsNeverReplaceTheCachedGoodState() {
         val store = DashboardUiStateStore()
         store.updateDashboard(ready)

@@ -109,13 +109,7 @@ fun AssistantScreen(
     onSend: (String) -> Unit,
 ) {
     var draft by remember { mutableStateOf("") }
-    val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "assistant-orb")
-        .animateFloat(
-            initialValue = 0.96f,
-            targetValue = 1.04f,
-            animationSpec = infiniteRepeatable(tween(3_200), repeatMode = RepeatMode.Reverse),
-            label = "assistant-orb-scale",
-        )
+    val isWorking = isBusy || messages.any { it is AssistantMessage.Agent && it.streaming }
 
     Column(
         modifier = Modifier
@@ -133,15 +127,7 @@ fun AssistantScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .scale(pulse)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
-                }
+                HeaderOrb(active = isWorking)
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Tu asistente de salud", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
@@ -166,12 +152,15 @@ fun AssistantScreen(
         }
 
         val listState = rememberLazyListState()
-        // Keep the newest text in view while the answer is being written.
+        // Follow the answer while it is written, but at a walking pace (one
+        // scroll per ~48 characters, not per tick) and only when the reader is
+        // already at the bottom, so scrolling up is never yanked back.
         val lastLength = (messages.lastOrNull() as? AssistantMessage.Agent)?.text?.length ?: 0
-        LaunchedEffect(messages.size, lastLength) {
-            if (messages.isNotEmpty()) {
-                listState.animateScrollToItem(messages.lastIndex)
-            }
+        LaunchedEffect(messages.size, lastLength / 48) {
+            if (messages.isEmpty()) return@LaunchedEffect
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            if (lastVisible < messages.lastIndex - 1) return@LaunchedEffect
+            listState.animateScrollToItem(messages.lastIndex)
         }
 
         LazyColumn(
@@ -190,7 +179,10 @@ fun AssistantScreen(
                 }
             }
             itemsIndexed(messages) { _, message ->
-                MessageEntrance(fromUser = message is AssistantMessage.User) {
+                MessageEntrance(
+                    fromUser = message is AssistantMessage.User,
+                    modifier = Modifier.animateItem(),
+                ) {
                     when (message) {
                         is AssistantMessage.User -> MessageBubble(message.text, fromUser = true)
                         is AssistantMessage.Agent -> AgentBubble(message, onSend = onSend, isBusy = isBusy)
@@ -274,6 +266,41 @@ private fun StreamingBubble(text: String, streaming: Boolean) {
     }
     val visible = if (streaming) text.take(revealed.coerceIn(0, text.length)) else text
     MessageBubble(text = if (streaming) "$visible▍" else visible, fromUser = false)
+}
+
+/**
+ * The header orb only breathes while the assistant is actually working. An
+ * always-running animation in a page that may be sitting offscreen costs
+ * frames for nothing.
+ */
+@Composable
+private fun HeaderOrb(active: Boolean) {
+    if (!active) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(MaterialTheme.colorScheme.primary, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+        }
+        return
+    }
+    val pulse by rememberInfiniteTransition(label = "assistant-orb").animateFloat(
+        initialValue = 0.96f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(tween(2_400), repeatMode = RepeatMode.Reverse),
+        label = "assistant-orb-scale",
+    )
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .scale(pulse)
+            .background(MaterialTheme.colorScheme.primary, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+    }
 }
 
 @Composable
@@ -561,14 +588,18 @@ private fun SendSpinner() {
 
 /** New messages arrive from their own side, so the thread reads in order. */
 @Composable
-private fun MessageEntrance(fromUser: Boolean, content: @Composable () -> Unit) {
+private fun MessageEntrance(
+    fromUser: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         progress.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
     }
     val shift = (1f - progress.value) * (if (fromUser) 36f else -36f)
     Box(
-        modifier = Modifier.graphicsLayer {
+        modifier = modifier.graphicsLayer {
             translationX = shift
             alpha = progress.value
             val scale = 0.96f + 0.04f * progress.value

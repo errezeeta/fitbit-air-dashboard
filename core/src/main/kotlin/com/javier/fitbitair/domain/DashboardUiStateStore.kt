@@ -19,6 +19,10 @@ data class DashboardUiState(
 
 /** Small UI state holder; the Compose layer renders this state and supplies user events. */
 class DashboardUiStateStore {
+    companion object {
+        /** How long a load is considered fresh enough to serve again. */
+        const val FRESH_WINDOW_MS = 45_000L
+    }
     var state: DashboardUiState = DashboardUiState()
         private set
 
@@ -28,9 +32,35 @@ class DashboardUiStateStore {
      * blanking into the loading skeleton every time the screen is opened.
      */
     private val lastGoodByRange = mutableMapOf<TrendRange, DashboardState.Ready>()
+    private val loadedAtByRange = mutableMapOf<TrendRange, Long>()
+    private var loadedRevision: Int? = null
+    private var loadedConnected: Boolean? = null
     private var settingsReturnDestination = DashboardDestination.HOME
 
     fun cachedDashboard(range: TrendRange): DashboardState.Ready? = lastGoodByRange[range]
+
+    /**
+     * Whether a fetch is actually needed. Data loaded moments ago is served
+     * from here: sliding between sections or flipping the range back and forth
+     * must not turn into network traffic.
+     */
+    fun needsReload(
+        revision: Int,
+        connected: Boolean,
+        ttlMillis: Long = FRESH_WINDOW_MS,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Boolean {
+        val loadedAt = loadedAtByRange[state.range] ?: return true
+        if (nowMillis - loadedAt >= ttlMillis) return true
+        if (loadedRevision != revision) return true
+        if (loadedConnected != connected) return true
+        return false
+    }
+
+    /** Forces the next load to go out, e.g. after a pull-to-refresh. */
+    fun markStale() {
+        loadedAtByRange.remove(state.range)
+    }
 
     fun select(destination: DashboardDestination) {
         if (destination != DashboardDestination.SETTINGS) {
@@ -38,9 +68,17 @@ class DashboardUiStateStore {
         }
     }
 
-    fun updateDashboard(dashboard: DashboardState) {
+    fun updateDashboard(
+        dashboard: DashboardState,
+        revision: Int = 0,
+        connected: Boolean = false,
+        atMillis: Long = System.currentTimeMillis(),
+    ) {
         if (dashboard is DashboardState.Ready) {
             lastGoodByRange[state.range] = dashboard
+            loadedAtByRange[state.range] = atMillis
+            loadedRevision = revision
+            loadedConnected = connected
         }
         state = state.copy(dashboard = dashboard, refreshing = false)
     }

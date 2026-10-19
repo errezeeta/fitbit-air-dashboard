@@ -58,6 +58,30 @@ fun Modifier.clickableScaled(
 }
 
 /**
+ * A screen that belongs deeper in the stack enters from the trailing edge, so
+ * opening a detail or settings reads as going forward, and closing as coming
+ * back — no instant swap.
+ */
+@Composable
+fun SlideInFromEnd(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, tween(280, easing = FastOutSlowInEasing))
+    }
+    Box(
+        modifier = modifier.graphicsLayer {
+            translationX = (1f - progress.value) * 64f
+            alpha = 0.35f + 0.65f * progress.value
+        },
+    ) {
+        content()
+    }
+}
+
+/**
  * Content that arrives in order: each item waits a beat more than the previous
  * one, then fades and rises into place. Only the first composition animates, so
  * a data refresh does not make the whole screen dance again.
