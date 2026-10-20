@@ -81,7 +81,7 @@ private enum class AppTab(
     HOME(DashboardDestination.HOME, "Inicio", Icons.Rounded.Home),
     SLEEP(DashboardDestination.SLEEP, "Sueño", Icons.Rounded.Bedtime),
     ACTIVITY(DashboardDestination.ACTIVITY, "Actividad", Icons.AutoMirrored.Rounded.DirectionsWalk),
-    ASSISTANT(DashboardDestination.ASSISTANT, "IA", Icons.Rounded.AutoAwesome),
+    ASSISTANT(DashboardDestination.ASSISTANT, "Asistente", Icons.Rounded.AutoAwesome),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

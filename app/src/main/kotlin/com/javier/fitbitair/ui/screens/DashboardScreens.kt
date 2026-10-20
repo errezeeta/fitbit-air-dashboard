@@ -93,41 +93,23 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(modifier = Modifier.padding(horizontal = 2.dp)) {
-            Text("TU RESUMEN", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+            Text("RESUMEN DIARIO", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
             Text("Hoy", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
             Text(todayLabel(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         StaggeredAppear(index = 1) {
-            SleepHeroCard(data.sleep, onOpen = onOpenSleep)
-        }
-
-        StaggeredAppear(index = 2) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                StepsMetricCard(
-                    steps = data.stepsToday,
-                    goal = stepGoal,
-                    modifier = Modifier.weight(1f),
-                    onEditGoal = { showGoalDialog = true },
-                )
-                RestingHeartCard(
-                    current = data.restingHeartRate,
-                    previous = data.previousRestingHeartRate,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onOpenDetail(MetricKind.HEART) },
-                )
-            }
-        }
-
-        StaggeredAppear(index = 3) {
-            DistanceCard(
-                meters = data.distanceTodayMeters,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onOpenDetail(MetricKind.DISTANCE) },
+            TodayOverviewCard(
+                data = data,
+                stepGoal = stepGoal,
+                onEditGoal = { showGoalDialog = true },
+                onOpenSleep = onOpenSleep,
+                onOpenHeart = { onOpenDetail(MetricKind.HEART) },
+                onOpenDistance = { onOpenDetail(MetricKind.DISTANCE) },
             )
         }
 
-        StaggeredAppear(index = 4) {
+        StaggeredAppear(index = 2) {
             TrendPanel(
                 title = if (range == TrendRange.WEEK) "Pasos esta semana" else "Pasos últimos 30 días",
                 range = range,
@@ -152,6 +134,157 @@ fun HomeScreen(
                 onStepGoalChange(newGoal)
                 showGoalDialog = false
             },
+        )
+    }
+}
+
+@Composable
+private fun TodayOverviewCard(
+    data: DashboardData,
+    stepGoal: Int,
+    onEditGoal: () -> Unit,
+    onOpenSleep: () -> Unit,
+    onOpenHeart: () -> Unit,
+    onOpenDistance: () -> Unit,
+) {
+    val progress = stepProgress(data.stepsToday, stepGoal)
+    val animatedProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = progress,
+        animationSpec = androidx.compose.animation.core.tween(650, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "today-step-progress",
+    )
+    ElevatedCard(
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.86f))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "PASOS DE HOY",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        formatStepsCount(data.stepsToday),
+                        style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Clip,
+                    )
+                    Text(
+                        "de ${formatStepsCount(stepGoal)} pasos",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
+                    )
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(7.dp).clip(CircleShape),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f),
+                    )
+                    TextButtonLabel("Ajustar objetivo", onEditGoal)
+                }
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(78.dp)) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier.fillMaxSize(),
+                        strokeWidth = 7.dp,
+                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f),
+                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "${(progress * 100).toInt()}%",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text("meta", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f))
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                TodayMetricTile(
+                    label = "SUEÑO",
+                    value = data.sleep.asleepMinutes.takeIf { it > 0 }?.let(::formatDuration) ?: "—",
+                    note = if (data.sleep.asleepMinutes > 0) "última noche" else "sin registro",
+                    icon = { Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
+                    onClick = onOpenSleep,
+                    modifier = Modifier.weight(1f),
+                )
+                TodayMetricTile(
+                    label = "PULSO",
+                    value = data.restingHeartRate.takeIf { it > 0 }?.let { "$it lpm" } ?: "—",
+                    note = "en reposo",
+                    icon = { Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
+                    onClick = onOpenHeart,
+                    modifier = Modifier.weight(1f),
+                )
+                TodayMetricTile(
+                    label = "DISTANCIA",
+                    value = data.distanceTodayMeters.takeIf { it > 0 }?.let(::formatDistanceValue) ?: "—",
+                    note = "hoy",
+                    icon = { Icon(Icons.Rounded.Route, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) },
+                    onClick = onOpenDistance,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodayMetricTile(
+    label: String,
+    value: String,
+    note: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f))
+            .clickableScaled(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 11.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        icon()
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            note,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -363,25 +496,6 @@ private fun DistanceCard(meters: Int, modifier: Modifier = Modifier, onClick: ()
 }
 
 @Composable
-private fun StepsMetricCard(steps: Int, goal: Int, modifier: Modifier, onEditGoal: () -> Unit) {
-    Card(modifier = modifier, shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Icon(Icons.AutoMirrored.Rounded.DirectionsWalk, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Text("Pasos", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(formatStepsCount(steps), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Clip)
-            Text("Meta diaria: ${formatStepsCount(goal)} pasos", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            androidx.compose.material3.LinearProgressIndicator(
-                progress = { stepProgress(steps, goal) },
-                modifier = Modifier.fillMaxWidth().height(7.dp).clip(CircleShape),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            )
-            TextButtonLabel("Editar meta", onEditGoal)
-        }
-    }
-}
-
-@Composable
 private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit, onClick: () -> Unit = {}) {
     ElevatedCard(shape = RoundedCornerShape(28.dp), modifier = Modifier.clickableScaled(onClick = onClick)) {
         Row(
@@ -409,31 +523,6 @@ private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit, onClick: ()
                 Text("de ${formatStepsCount(goal)} pasos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButtonLabel("Editar meta", onEdit)
             }
-        }
-    }
-}
-
-@Composable
-private fun RestingHeartCard(current: Int, previous: Int?, modifier: Modifier, onClick: () -> Unit) {
-    val validCurrent = current.takeIf { it > 0 }
-    val delta = validCurrent?.let { trendDelta(it, previous) }
-    Card(modifier = modifier.clickableScaled(onClick = onClick), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-            Text("Pulso en reposo", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(validCurrent?.toString() ?: "—", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text("lpm", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(
-                delta?.let {
-                    "${if (it > 0) "+" else ""}$it lpm respecto a la semana anterior"
-                } ?: if (validCurrent == null) "Sin lectura reciente" else "Consulta la tendencia en Actividad",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (delta != null && delta <= 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-            )
         }
     }
 }
