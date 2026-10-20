@@ -1,7 +1,10 @@
 package com.javier.fitbitair.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +21,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -48,6 +52,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.javier.fitbitair.ui.components.PageHeader
 
 @Composable
 fun SettingsScreen(
@@ -70,20 +76,15 @@ fun SettingsScreen(
             .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Preferencias y conexiones", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text(
-            if (backendConfigured) "Estado de las conexiones" else "Demo local · backend de Cloud Run pendiente",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
+        PageHeader("PERSONALIZACIÓN", "Ajustes", "Conexiones, preferencias y privacidad", Icons.Rounded.Settings)
+        SectionLabel("CUENTAS Y SERVICIOS")
         ConnectionCard(
             title = "Google Health",
             subtitle = when {
                 !backendConfigured -> "Cloud Run aún no está configurado."
-                !googleOAuthConfigured -> "El servidor está desplegado, pero falta completar la autorización de Google."
-                googleConnected -> "Conectado · pasos, sueño y pulso se consultan cuando los necesitas."
-                else -> "Desconectado · conecta tu cuenta para consultar pasos, sueño y pulso."
+                !googleOAuthConfigured -> "El servidor está listo; falta autorizar la cuenta de Google."
+                googleConnected -> "Pasos, sueño y pulso se consultan cuando abres la app."
+                else -> "Conecta tu cuenta para consultar pasos, sueño y pulso."
             },
             icon = {
                 Icon(
@@ -92,6 +93,8 @@ fun SettingsScreen(
                     tint = if (googleConnected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             },
+            statusLabel = if (googleConnected) "Conectado" else if (backendConfigured && googleOAuthConfigured) "Pendiente" else "No disponible",
+            isHealthy = googleConnected,
             actionLabel = if (backendConfigured && googleOAuthConfigured) {
                 if (googleConnected) "Reautorizar" else "Conectar"
             } else null,
@@ -100,38 +103,49 @@ fun SettingsScreen(
         ConnectionCard(
             title = "Hermes",
             subtitle = if (assistantConfigured) {
-                "Configurado · el backend verifica que no haya herramientas activas antes de enviar métricas."
+                "Configurado · las métricas solo se envían cuando haces una pregunta."
             } else {
                 "Pendiente · falta enlazar el API Server de forma segura por HTTPS."
             },
             icon = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            statusLabel = if (assistantConfigured) "Listo" else "Pendiente",
+            isHealthy = assistantConfigured,
         )
         connectionMessage?.let { message ->
             Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        ElevatedCard(shape = RoundedCornerShape(26.dp)) {
+        SectionLabel("TU OBJETIVO")
+        ElevatedCard(shape = RoundedCornerShape(26.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f))) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(Icons.Rounded.Flag, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("Meta manual de pasos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Meta diaria de pasos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
-                Text("${formatGoal(stepGoal)} pasos al día", style = MaterialTheme.typography.bodyLarge)
-                Text("Esta preferencia queda guardada en el dispositivo; no se guarda un historial local de salud.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${formatGoal(stepGoal)} pasos", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text("Se guarda en este dispositivo; no se conserva aquí un historial de salud.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = { editGoal = true }) { Text("Cambiar meta") }
             }
         }
 
+        SectionLabel("ESTE DISPOSITIVO")
         SoftwareUpdateCard(updater, appVersionName)
 
-        Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Privacidad", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "El token de Google y la clave de Hermes permanecen en el servidor. El dispositivo guarda una sesión de app cifrada; las métricas se consultan a demanda y no se conserva un historial local. Si preguntas a la IA, se envía el resumen del periodo elegido.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        var privacyExpanded by remember { mutableStateOf(false) }
+        Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Privacidad", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("Qué datos salen del teléfono y cuándo.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (privacyExpanded) {
+                    Text(
+                        "El token de Google y la clave de Hermes permanecen en el servidor. El dispositivo guarda una sesión cifrada; las métricas se consultan a demanda y no se conserva un historial local. Si preguntas a Hermes, se envía el resumen del periodo elegido.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = { privacyExpanded = !privacyExpanded }) {
+                    Text(if (privacyExpanded) "Ocultar detalles" else "Ver detalles")
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -151,25 +165,49 @@ private fun ConnectionCard(
     title: String,
     subtitle: String,
     icon: @Composable () -> Unit,
+    statusLabel: String,
+    isHealthy: Boolean,
     actionLabel: String? = null,
     onAction: () -> Unit = {},
 ) {
-    ElevatedCard(shape = RoundedCornerShape(24.dp)) {
+    ElevatedCard(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
         ) {
-            icon()
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Box(
+                Modifier.size(42.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(15.dp)),
+                contentAlignment = Alignment.Center,
+            ) { icon() }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(Modifier.size(7.dp).background(if (isHealthy) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline, CircleShape))
+                        Text(statusLabel, style = MaterialTheme.typography.labelSmall, color = if (isHealthy) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            actionLabel?.let { label ->
-                TextButton(onClick = onAction) { Text(label) }
+                actionLabel?.let { label -> TextButton(onClick = onAction) { Text(label) } }
             }
         }
     }
+}
+
+@Composable
+private fun SectionLabel(label: String) {
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+    )
 }
 
 @Composable

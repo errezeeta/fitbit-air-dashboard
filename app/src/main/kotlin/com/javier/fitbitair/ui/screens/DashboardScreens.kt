@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -21,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Sensors
@@ -62,6 +64,7 @@ import com.javier.fitbitair.domain.sleepEfficiencyPercent
 import com.javier.fitbitair.domain.stepProgress
 import com.javier.fitbitair.domain.trendDelta
 import com.javier.fitbitair.ui.components.DistanceBarChart
+import com.javier.fitbitair.ui.components.PageHeader
 import com.javier.fitbitair.ui.components.StaggeredAppear
 import com.javier.fitbitair.ui.components.clickableScaled
 import com.javier.fitbitair.ui.components.HeartRateSparkline
@@ -92,11 +95,7 @@ fun HomeScreen(
             .padding(horizontal = 18.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 2.dp)) {
-            Text("RESUMEN DIARIO", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
-            Text("Hoy", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-            Text(todayLabel(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        PageHeader("RESUMEN DIARIO", "Hoy", todayLabel(), Icons.Rounded.Home)
 
         StaggeredAppear(index = 1) {
             TodayOverviewCard(
@@ -298,6 +297,7 @@ fun SleepScreen(
     onOpenDay: (LocalDate) -> Unit = {},
 ) {
     val efficiency = sleepEfficiencyPercent(data.sleep.asleepMinutes, data.sleep.inBedMinutes)
+    var showStages by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -305,37 +305,57 @@ fun SleepScreen(
             .padding(horizontal = 18.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        ScreenHeading("DESCANSO", "Sueño", "Duración y fases de tus noches")
+        PageHeader("RECUPERACIÓN", "Sueño", "Duración, horario y fases de cada noche", Icons.Rounded.Bedtime, accent = MaterialTheme.colorScheme.tertiary)
         SleepHeroCard(data.sleep, onOpen = { onOpenDetail(MetricKind.SLEEP) })
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            StatCard("Eficiencia*", efficiency?.let { "$it%" } ?: "—", "cálculo de la app", Modifier.weight(1f))
-            StatCard("Sueño profundo", formatDuration(data.sleep.stages.firstOrNull { it.kind == SleepStageKind.DEEP }?.minutes ?: 0), "fase registrada", Modifier.weight(1f))
+        SleepSummaryStrip(
+            efficiency = efficiency,
+            deepMinutes = data.sleep.stages.firstOrNull { it.kind == SleepStageKind.DEEP }?.minutes ?: 0,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = !showStages, onClick = { showStages = false }, label = { Text("Duración") })
+            FilterChip(selected = showStages, onClick = { showStages = true }, label = { Text("Fases") })
         }
         TrendPanel(
-            "Duración del sueño",
+            if (showStages) "Fases por noche" else "Duración por noche",
             range,
             onRangeChange,
             onOpenDetail = { onOpenDetail(MetricKind.SLEEP) },
         ) {
             if (data.sleepTrend.isEmpty()) {
-                TrendEmptyState("Todavía no hay noches registradas", "El gráfico se mostrará cuando haya datos de sueño.")
+                TrendEmptyState("Todavía no hay noches registradas", "El gráfico aparecerá cuando Google Health tenga datos de sueño.")
+            } else if (showStages) {
+                SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
             } else {
                 SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
             }
         }
-        TrendPanel(
-            "Fases de cada noche",
-            range,
-            onRangeChange = {},
-            onOpenDetail = { onOpenDetail(MetricKind.SLEEP) },
+        InfoNote("La eficiencia es un cálculo propio (tiempo dormido ÷ tiempo en cama), no el Sleep Score de Fitbit.")
+    }
+}
+
+@Composable
+private fun SleepSummaryStrip(efficiency: Int?, deepMinutes: Int) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            if (data.sleepTrend.isEmpty()) {
-                TrendEmptyState("Sin fases de sueño", "Las fases aparecerán cuando se registre una noche.")
-            } else {
-                SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("EFICIENCIA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                Text(efficiency?.let { "$it%" } ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("tiempo dormido / en cama", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Box(Modifier.width(1.dp).height(48.dp).background(MaterialTheme.colorScheme.outlineVariant))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("SUEÑO PROFUNDO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                Text(deepMinutes.takeIf { it > 0 }?.let(::formatDuration) ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(if (deepMinutes > 0) "fase registrada" else "sin registro", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        InfoNote("*La eficiencia es un cálculo propio (tiempo dormido ÷ tiempo en cama). No es el Sleep Score de Fitbit.")
     }
 }
 
@@ -350,6 +370,7 @@ fun ActivityScreen(
     onOpenDay: (LocalDate) -> Unit = {},
 ) {
     var showGoalDialog by remember { mutableStateOf(false) }
+    var showDistance by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -357,42 +378,39 @@ fun ActivityScreen(
             .padding(horizontal = 18.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        ScreenHeading("MOVIMIENTO", "Actividad", "Pasos, distancia y pulso en reposo")
-        StepsGoalCard(data.stepsToday, stepGoal, onEdit = { showGoalDialog = true }, onClick = { onOpenDetail(MetricKind.STEPS) })
-        DistanceCard(
-            meters = data.distanceTodayMeters,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { onOpenDetail(MetricKind.DISTANCE) },
+        PageHeader("MOVIMIENTO", "Actividad", "Pasos, recorrido y pulso en reposo", Icons.AutoMirrored.Rounded.DirectionsWalk)
+        StepsGoalCard(
+            steps = data.stepsToday,
+            goal = stepGoal,
+            distanceMeters = data.distanceTodayMeters,
+            onEdit = { showGoalDialog = true },
+            onClick = { onOpenDetail(MetricKind.STEPS) },
+            onOpenDistance = { onOpenDetail(MetricKind.DISTANCE) },
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = !showDistance, onClick = { showDistance = false }, label = { Text("Pasos") })
+            FilterChip(selected = showDistance, onClick = { showDistance = true }, label = { Text("Distancia") })
+        }
         TrendPanel(
-            "Pasos por día",
+            if (showDistance) "Distancia por día" else "Pasos por día",
             range,
             onRangeChange,
-            onOpenDetail = { onOpenDetail(MetricKind.STEPS) },
+            onOpenDetail = { onOpenDetail(if (showDistance) MetricKind.DISTANCE else MetricKind.STEPS) },
         ) {
-            if (data.stepsTrend.isEmpty()) {
-                TrendEmptyState("Todavía no hay datos de pasos", "Las lecturas diarias aparecerán aquí.")
+            if (!showDistance) {
+                if (data.stepsTrend.isEmpty()) {
+                    TrendEmptyState("Todavía no hay datos de pasos", "Las lecturas diarias aparecerán aquí.")
+                } else {
+                    StepsBarChart(data.stepsTrend, goal = stepGoal, onOpenDay = onOpenDay)
+                }
+            } else if (data.distanceTrend.isEmpty()) {
+                TrendEmptyState("Todavía no hay distancias", "El gráfico aparecerá cuando se registren recorridos.")
             } else {
-                StepsBarChart(data.stepsTrend, goal = stepGoal, onOpenDay = onOpenDay)
-            }
-        }
-        if (data.distanceTrend.isNotEmpty()) {
-            TrendPanel(
-                "Distancia por día",
-                range,
-                onRangeChange = {},
-                onOpenDetail = { onOpenDetail(MetricKind.DISTANCE) },
-            ) {
                 DistanceBarChart(data.distanceTrend, onOpenDay = onOpenDay)
             }
         }
         RestingHeartDetail(data, onOpenDetail = { onOpenDetail(MetricKind.HEART) }, onOpenDay = onOpenDay)
-        Text(
-            "Lecturas del periodo seleccionado",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp),
-        )
+        Spacer(Modifier.height(8.dp))
     }
     if (showGoalDialog) {
         StepGoalDialog(stepGoal, { showGoalDialog = false }, { value -> onStepGoalChange(value); showGoalDialog = false })
@@ -401,131 +419,127 @@ fun ActivityScreen(
 
 @Composable
 private fun SleepHeroCard(sleep: SleepSummary, onOpen: () -> Unit) {
-    val efficiency = sleepEfficiencyPercent(sleep.asleepMinutes, sleep.inBedMinutes)
+    val foreground = MaterialTheme.colorScheme.onSecondaryContainer
     Card(
         modifier = Modifier.fillMaxWidth().clickableScaled(onClick = onOpen),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        shape = RoundedCornerShape(30.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        if (sleep.asleepMinutes > 0) "SUEÑO · ANOCHE" else "SUEÑO",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        if (sleep.asleepMinutes > 0) "Tiempo total dormido" else "Sin registro reciente",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+        Column(Modifier.fillMaxWidth().padding(19.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp), modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(foreground.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = foreground)
                 }
-                efficiency?.let { percent ->
-                    Text(
-                        "Eficiencia $percent%*",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.08f))
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                    )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text("ÚLTIMA NOCHE", style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = 0.72f), fontWeight = FontWeight.Bold)
+                    Text(if (sleep.asleepMinutes > 0) "Tiempo dormido" else "Sin registro reciente", style = MaterialTheme.typography.titleMedium, color = foreground, fontWeight = FontWeight.SemiBold)
                 }
             }
             if (sleep.asleepMinutes <= 0) {
-                Text(
-                    "No hay un registro de sueño reciente.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
-                )
+                Text("No hay un registro de sueño reciente.", style = MaterialTheme.typography.bodyMedium, color = foreground.copy(alpha = 0.82f))
             } else {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text("${sleep.asleepMinutes / 60}", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
-                    Text(" h ", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text("${sleep.asleepMinutes % 60}", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
-                    Text(" min", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text("${sleep.asleepMinutes / 60}", style = MaterialTheme.typography.displayMedium, color = foreground, fontWeight = FontWeight.SemiBold)
+                    Text(" h ", style = MaterialTheme.typography.titleLarge, color = foreground)
+                    Text("${sleep.asleepMinutes % 60}", style = MaterialTheme.typography.displayMedium, color = foreground, fontWeight = FontWeight.SemiBold)
+                    Text(" min", style = MaterialTheme.typography.titleLarge, color = foreground)
                 }
-                Text("${sleep.bedtime} — ${sleep.wakeTime} · hora local", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    SleepTimePoint("ACOSTARSE", sleep.bedtime, Modifier.weight(1f))
+                    SleepTimePoint("DESPERTAR", sleep.wakeTime, Modifier.weight(1f))
+                }
                 if (sleep.stages.isNotEmpty()) {
-                    SleepStageBar(sleep.stages, Modifier.fillMaxWidth())
-                    SleepStageLegend(sleep.stages)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SleepStageBar(sleep.stages, Modifier.fillMaxWidth())
+                        SleepStageLegend(sleep.stages)
+                    }
                 }
             }
+            Text("Toca para ver el detalle de esta noche →", style = MaterialTheme.typography.labelSmall, color = foreground.copy(alpha = 0.72f))
         }
     }
 }
 
 @Composable
-private fun DistanceCard(meters: Int, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
-    if (meters <= 0) return
-    Card(
-        modifier = modifier.clickableScaled(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.86f),
-        ),
+private fun SleepTimePoint(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.clip(RoundedCornerShape(15.dp)).background(MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.06f)).padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Icon(
-                Icons.Rounded.Route,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Distancia de hoy", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f))
-                    Text(
-                        formatDistanceValue(meters),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.65f), fontWeight = FontWeight.SemiBold)
+        Text(value, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun StepsGoalCard(
+    steps: Int,
+    goal: Int,
+    distanceMeters: Int,
+    onEdit: () -> Unit,
+    onClick: () -> Unit = {},
+    onOpenDistance: () -> Unit,
+) {
+    val progress = stepProgress(steps, goal)
+    val animatedProgress by androidx.compose.animation.core.animateFloatAsState(
+        progress,
+        animationSpec = androidx.compose.animation.core.tween(600, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "activity-goal-progress",
+    )
+    ElevatedCard(
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.fillMaxWidth().clickableScaled(onClick = onClick),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(84.dp)) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier.fillMaxSize(),
+                        strokeWidth = 8.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f),
                     )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("meta", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("PASOS DE HOY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                    Text(formatStepsCount(steps), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text("de ${formatStepsCount(goal)} pasos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButtonLabel("Cambiar meta", onEdit)
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f)))
+            Row(
+                modifier = Modifier.fillMaxWidth().clickableScaled(onClick = onOpenDistance),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Route, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                Column(Modifier.weight(1f)) {
+                    Text("DISTANCIA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                    Text("Recorrido de hoy", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(
+                    distanceMeters.takeIf { it > 0 }?.let(::formatDistanceValue) ?: "—",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
 }
 
-@Composable
-private fun StepsGoalCard(steps: Int, goal: Int, onEdit: () -> Unit, onClick: () -> Unit = {}) {
-    ElevatedCard(shape = RoundedCornerShape(28.dp), modifier = Modifier.clickableScaled(onClick = onClick)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            val progress = stepProgress(steps, goal)
-            val animatedProgress by androidx.compose.animation.core.animateFloatAsState(progress, label = "step-progress")
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(92.dp)) {
-                androidx.compose.material3.CircularProgressIndicator(
-                    progress = { animatedProgress },
-                    modifier = Modifier.fillMaxSize(),
-                    strokeWidth = 9.dp,
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                )
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("meta", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text("PASOS DE HOY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(formatStepsCount(steps), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                Text("de ${formatStepsCount(goal)} pasos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButtonLabel("Editar meta", onEdit)
-            }
-        }
-    }
-}
 
 @Composable
 private fun HeartMiniStat(label: String, value: String) {
@@ -620,26 +634,6 @@ private fun TrendPanel(
                 TextButtonLabel("Ver detalle del periodo →", open)
             }
         }
-    }
-}
-
-@Composable
-private fun StatCard(title: String, value: String, note: String, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text(note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun ScreenHeading(kicker: String, title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 2.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(kicker, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
-        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

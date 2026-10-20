@@ -510,24 +510,55 @@ fun HeartRateSparkline(
     modifier: Modifier = Modifier,
 ) {
     if (data.isEmpty()) return
+    var selected by remember(data) { mutableStateOf(data.lastIndex) }
+    val selectedReading = data.getOrNull(selected) ?: data.last()
     val lineColor = MaterialTheme.colorScheme.tertiary
     val axisColor = MaterialTheme.colorScheme.outline
     val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)
-    val measurer = rememberTextMeasurer()
     val values = data.map { it.beatsPerMinute.toFloat() }
     val average = values.average()
+    val selectionSurface = MaterialTheme.colorScheme.surface
+
+    AnimatedContent(
+        targetState = selectedReading,
+        transitionSpec = {
+            (fadeIn(androidx.compose.animation.core.tween(150)) + slideInVertically(androidx.compose.animation.core.tween(180)) { it / 5 }) togetherWith
+                fadeOut(androidx.compose.animation.core.tween(100))
+        },
+        label = "heart-chart-selection",
+    ) { reading ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(reading.date?.let(::chartTooltipDate) ?: "Lectura seleccionada", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${reading.beatsPerMinute} lpm", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = lineColor)
+            }
+            Text(
+                "media ${Math.round(average)} lpm",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
+    }
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(84.dp)
             .pointerInput(data, onOpenDay) {
+                fun indexAt(x: Float): Int = if (data.size == 1) 0 else {
+                    ((x / size.width) * data.lastIndex).toInt().coerceIn(0, data.lastIndex)
+                }
                 detectTapGestures(
+                    onTap = { offset -> selected = indexAt(offset.x) },
                     onLongPress = { offset ->
-                        if (onOpenDay == null || data.isEmpty()) return@detectTapGestures
-                        val slotWidth = size.width / data.size
-                        val index = (offset.x / slotWidth).toInt().coerceIn(0, data.lastIndex)
-                        data[index].date?.let(onOpenDay)
+                        val index = indexAt(offset.x)
+                        selected = index
+                        data[index].date?.let { onOpenDay?.invoke(it) }
                     },
                 )
             },
@@ -555,32 +586,6 @@ fun HeartRateSparkline(
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f)),
         )
 
-        // The band the readings moved in, so the line has a scale on its own.
-        listOf(
-            (values.minOrNull() ?: 0f) to "mín",
-            (values.maxOrNull() ?: 0f) to "máx",
-        ).forEach { (value, caption) ->
-            val y = inset + (size.height - 2 * inset) * (1f - (value - minimum) / span)
-            drawLine(
-                axisColor.copy(alpha = 0.35f),
-                Offset(0f, y),
-                Offset(size.width, y),
-                1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f, 6f)),
-            )
-            val measured = measurer.measure(
-                "$caption ${value.toInt()}",
-                labelStyle.copy(color = axisColor.copy(alpha = 0.85f), fontSize = 9.sp),
-            )
-            drawText(
-                measured,
-                topLeft = Offset(
-                    (size.width - measured.size.width - 2.dp.toPx()).coerceAtLeast(0f),
-                    (y - measured.size.height - 1.dp.toPx()).coerceAtLeast(0f),
-                ),
-            )
-        }
-
         val curve = Path().apply {
             moveTo(points.first().x, points.first().y)
             points.zipWithNext().forEach { (from, to) ->
@@ -603,9 +608,20 @@ fun HeartRateSparkline(
         )
         drawPath(curve, lineColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
 
+        val selectedPoint = points.getOrNull(selected) ?: points.last()
+        drawLine(
+            lineColor.copy(alpha = 0.20f),
+            Offset(selectedPoint.x, inset),
+            Offset(selectedPoint.x, size.height - inset),
+            1.dp.toPx(),
+        )
+        drawCircle(lineColor.copy(alpha = 0.18f), radius = 9.dp.toPx(), center = selectedPoint)
+        drawCircle(lineColor, radius = 4.dp.toPx(), center = selectedPoint)
         val last = points.last()
-        drawCircle(lineColor.copy(alpha = 0.18f), radius = 8.dp.toPx(), center = last)
-        drawCircle(lineColor, radius = 4.dp.toPx(), center = last)
+        if (selected != data.lastIndex) {
+            drawCircle(selectionSurface, radius = 5.5.dp.toPx(), center = last)
+            drawCircle(lineColor, radius = 3.dp.toPx(), center = last)
+        }
     }
 
     Row(
@@ -620,9 +636,15 @@ fun HeartRateSparkline(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "último ${data.last().beatsPerMinute} lpm",
+            "máx ${data.maxOf { it.beatsPerMinute }} · último ${data.last().beatsPerMinute}",
             style = labelStyle.copy(fontWeight = FontWeight.SemiBold),
             color = lineColor,
         )
     }
+    Text(
+        "Toca un punto para ver el dato · mantén pulsado para abrir el día",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 2.dp),
+    )
 }

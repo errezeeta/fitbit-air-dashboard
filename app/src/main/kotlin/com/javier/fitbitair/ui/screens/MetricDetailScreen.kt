@@ -1,5 +1,6 @@
 package com.javier.fitbitair.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +26,12 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +51,7 @@ import com.javier.fitbitair.domain.sleepEfficiencyPercent
 import com.javier.fitbitair.domain.sleepPoints
 import com.javier.fitbitair.domain.stepPoints
 import com.javier.fitbitair.ui.components.DistanceBarChart
+import com.javier.fitbitair.ui.components.PageHeader
 import com.javier.fitbitair.ui.components.HeartRateDistribution
 import com.javier.fitbitair.ui.components.HeartRateSparkline
 import com.javier.fitbitair.ui.components.SleepTrendChart
@@ -91,16 +98,13 @@ fun MetricDetailScreen(
             .padding(horizontal = 18.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Column(Modifier.padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                kind.kicker,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(kind.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-            Text(range.label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        PageHeader(
+            kind.kicker,
+            kind.title,
+            if (range == TrendRange.WEEK) "Últimos 7 días · selecciona un valor para ver el día" else "Últimos 30 días · selecciona un valor para ver el día",
+            kind.icon(),
+            accent = kind.accent(),
+        )
 
         HeroCard(kind, todayValue, stats.average, data.previousRestingHeartRate, stepGoal)
 
@@ -133,13 +137,9 @@ fun MetricDetailScreen(
                             HeartRateDistribution(data.heartRateTrend.map { it.beatsPerMinute })
                         }
                     }
-                    Hint(
-                        if (kind == MetricKind.HEART) {
-                            "Mantén pulsado un punto para abrir el día"
-                        } else {
-                            "Toca una barra para seleccionar el día · mantén pulsado para abrir su ficha"
-                        },
-                    )
+                    if (kind != MetricKind.HEART) {
+                        Hint("Toca una barra para seleccionar el día · mantén pulsado para abrir su ficha")
+                    }
                 }
             }
         }
@@ -220,74 +220,79 @@ private fun StatGrid(
     stepGoal: Int,
 ) {
     val steps = data.stepsTrend.map { it.steps }
-    ElevatedCard(shape = RoundedCornerShape(26.dp)) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Resumen del periodo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-
+    var expanded by remember(kind, stats.days) { mutableStateOf(false) }
+    ElevatedCard(shape = RoundedCornerShape(26.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text("Resumen del periodo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Menos" else "Todo") }
+            }
             StatLine("Días con registro", "${stats.days}")
             StatLine("Media diaria", kind.formatValue(Math.round(stats.average).toInt()))
             if (kind == MetricKind.STEPS || kind == MetricKind.DISTANCE) {
                 StatLine("Total del periodo", kind.formatValue(stats.total.toInt()))
             }
             stats.best?.let { best ->
-                StatLine(
-                    "Mejor día",
-                    kind.formatValue(best.value),
-                    best.date?.let(::chartTooltipDate),
-                )
+                StatLine(kind.maximumLabel(), kind.formatValue(best.value), best.date?.let(::chartTooltipDate))
             }
-            stats.worst?.let { worst ->
-                StatLine(
-                    "Día más bajo",
-                    kind.formatValue(worst.value),
-                    worst.date?.let(::chartTooltipDate),
-                )
-            }
-
-            when (kind) {
-                MetricKind.STEPS -> {
-                    StatLine("Días cumpliendo la meta", "${TrendStats.daysOverGoal(steps, stepGoal)} de ${stats.days}")
-                    StatLine(
-                        "Mejor racha sobre la meta",
-                        "${TrendStats.longestStreakOverGoal(steps, stepGoal)} días",
-                    )
-                    StatLine("Días con actividad", "${TrendStats.activeDayPercent(steps)} %")
-                }
-                MetricKind.SLEEP -> {
-                    val variability = TrendStats.variabilityPercent(data.sleepTrend.map { it.summary.asleepMinutes })
-                    variability?.let { StatLine("Regularidad del descanso", "±$it %", "variación respecto a tu media") }
-                    val efficiency = sleepEfficiencyPercent(data.sleep.asleepMinutes, data.sleep.inBedMinutes)
-                    efficiency?.let { StatLine("Eficiencia de anoche", "$it %", "tiempo dormido ÷ tiempo en cama") }
-                }
-                MetricKind.HEART -> {
-                    StatLine("Rango del periodo", "${stats.worst?.value ?: 0} – ${stats.best?.value ?: 0} lpm")
-                    val readings = data.heartRateTrend.map { it.beatsPerMinute }
-                    TrendStats.variabilityPercent(readings)?.let { spread ->
-                        StatLine("Variabilidad", "±$spread %", "cuánto se mueve respecto a su media")
+            AnimatedVisibility(expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                    stats.worst?.let { worst ->
+                        StatLine(kind.minimumLabel(), kind.formatValue(worst.value), worst.date?.let(::chartTooltipDate))
                     }
-                    TrendStats.drift(readings)?.let { drift ->
-                        StatLine(
-                            "Tendencia",
-                            when (drift.direction) {
-                                TrendStats.Direction.RISING -> "subiendo ${drift.beatsPerMinute} lpm"
-                                TrendStats.Direction.FALLING -> "bajando ${drift.beatsPerMinute} lpm"
-                                TrendStats.Direction.STABLE -> "estable"
-                            },
-                            "segunda mitad del periodo frente a la primera",
-                        )
+                    when (kind) {
+                        MetricKind.STEPS -> {
+                            StatLine("Días cumpliendo la meta", "${TrendStats.daysOverGoal(steps, stepGoal)} de ${stats.days}")
+                            StatLine("Mejor racha sobre la meta", "${TrendStats.longestStreakOverGoal(steps, stepGoal)} días")
+                            StatLine("Días con actividad", "${TrendStats.activeDayPercent(steps)} %")
+                        }
+                        MetricKind.SLEEP -> {
+                            TrendStats.variabilityPercent(data.sleepTrend.map { it.summary.asleepMinutes })?.let {
+                                StatLine("Variación frente a la media", "±$it %")
+                            }
+                            sleepEfficiencyPercent(data.sleep.asleepMinutes, data.sleep.inBedMinutes)?.let {
+                                StatLine("Eficiencia de anoche", "$it %", "tiempo dormido ÷ tiempo en cama")
+                            }
+                        }
+                        MetricKind.HEART -> {
+                            val readings = data.heartRateTrend.map { it.beatsPerMinute }
+                            TrendStats.variabilityPercent(readings)?.let { StatLine("Variación frente a la media", "±$it %") }
+                            TrendStats.drift(readings)?.let { drift ->
+                                StatLine(
+                                    "Tendencia",
+                                    when (drift.direction) {
+                                        TrendStats.Direction.RISING -> "subiendo ${drift.beatsPerMinute} lpm"
+                                        TrendStats.Direction.FALLING -> "bajando ${drift.beatsPerMinute} lpm"
+                                        TrendStats.Direction.STABLE -> "estable"
+                                    },
+                                    "segunda mitad frente a la primera",
+                                )
+                            }
+                            if (stats.average > 0) {
+                                StatLine("Lecturas por debajo de la media", "${readings.count { it < stats.average }} de ${readings.size}")
+                            }
+                        }
+                        MetricKind.DISTANCE -> StatLine("Media por día activo", kind.formatValue(activeAverage(data)))
                     }
-                    val average = stats.average
-                    if (average > 0) {
-                        val below = readings.count { it < average }
-                        StatLine("Días por debajo de su media", "$below de ${readings.size}")
-                    }
-                }
-                MetricKind.DISTANCE -> {
-                    StatLine("Media por día activo", kind.formatValue(activeAverage(data)))
                 }
             }
         }
     }
+}
+
+
+private fun MetricKind.maximumLabel(): String = when (this) {
+    MetricKind.STEPS -> "Día con más pasos"
+    MetricKind.DISTANCE -> "Día de mayor distancia"
+    MetricKind.SLEEP -> "Noche más larga"
+    MetricKind.HEART -> "Máximo del periodo"
+}
+
+private fun MetricKind.minimumLabel(): String = when (this) {
+    MetricKind.STEPS -> "Día con menos pasos"
+    MetricKind.DISTANCE -> "Día de menor distancia"
+    MetricKind.SLEEP -> "Noche más corta"
+    MetricKind.HEART -> "Mínimo del periodo"
 }
 
 private fun activeAverage(data: DashboardData): Int {
@@ -298,17 +303,21 @@ private fun activeAverage(data: DashboardData): Int {
 
 @Composable
 private fun RecentDays(kind: MetricKind, points: List<SeriesPoint>, onOpenDay: (LocalDate) -> Unit) {
-    val recent = points.asReversed().take(10)
+    val recent = points.asReversed()
+    var showAll by remember(kind, points.size) { mutableStateOf(false) }
     if (recent.isEmpty()) return
-    ElevatedCard(shape = RoundedCornerShape(26.dp)) {
+    ElevatedCard(shape = RoundedCornerShape(26.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Día a día", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Toca un día para ver todo lo registrado",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            recent.forEach { point ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("Día a día", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Toca una fecha para abrir su ficha", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (recent.size > 3) {
+                    TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "Menos" else "Ver todos") }
+                }
+            }
+            recent.take(if (showAll) recent.size else 3).forEach { point ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -322,11 +331,7 @@ private fun RecentDays(kind: MetricKind, points: List<SeriesPoint>, onOpenDay: (
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        kind.formatValue(point.value),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Text(kind.formatValue(point.value), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

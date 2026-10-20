@@ -126,7 +126,7 @@ fun DayDetailSheet(snapshot: DaySnapshot, onDismiss: () -> Unit) {
 
             Spacer(Modifier.height(2.dp))
             Text(
-                "Datos leídos de Google Health. No es una valoración médica.",
+                "Datos del periodo seleccionado · no constituye una valoración médica.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

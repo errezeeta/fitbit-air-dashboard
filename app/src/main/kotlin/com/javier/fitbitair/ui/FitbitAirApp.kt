@@ -18,26 +18,29 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -177,21 +180,19 @@ fun FitbitAirApp(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            CenterAlignedTopAppBar(
+            TopAppBar(
                 title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Fitbit Air", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            detailMetric?.title ?: when (uiState.destination) {
-                                DashboardDestination.HOME -> "Inicio"
-                                DashboardDestination.SLEEP -> "Sueño"
-                                DashboardDestination.ACTIVITY -> "Actividad"
-                                DashboardDestination.ASSISTANT -> "Asistente"
-                                DashboardDestination.SETTINGS -> "Ajustes"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(
+                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            Text("Fitbit Air", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("SALUD PERSONAL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 },
                 navigationIcon = {
@@ -227,8 +228,6 @@ fun FitbitAirApp(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    // Translucent bar over a gradient backdrop gives the
-                    // Material You "frosted glass" feel; edge-to-edge is on.
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
                 ),
             )
@@ -246,6 +245,13 @@ fun FitbitAirApp(
                             icon = { Icon(tab.icon, contentDescription = null) },
                             label = { Text(tab.label) },
                             alwaysShowLabel = true,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
                         )
                     }
                 }
@@ -525,22 +531,37 @@ private fun DashboardContent(
 
 @Composable
 private fun DataSourceBanner(backendConfigured: Boolean, googleConnected: Boolean) {
-    val label = when {
-        !backendConfigured -> "Prototipo · datos ficticios"
-        !googleConnected -> "Google Health no conectado"
-        else -> "Google Health · consulta a demanda"
+    val label: String
+    val statusColor: androidx.compose.ui.graphics.Color
+    when {
+        !backendConfigured -> {
+            label = "Modo demo · datos de muestra"
+            statusColor = MaterialTheme.colorScheme.outline
+        }
+        !googleConnected -> {
+            label = "Google Health · sin conexión"
+            statusColor = MaterialTheme.colorScheme.error
+        }
+        else -> {
+            label = "Google Health · conectado · consulta a demanda"
+            statusColor = MaterialTheme.colorScheme.tertiary
+        }
     }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.Center,
     ) {
-        AssistChip(
-            onClick = {},
-            label = { Text(label) },
-            leadingIcon = { Text("●", color = if (googleConnected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline) },
-        )
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Box(Modifier.size(7.dp).background(statusColor, CircleShape))
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
 }
 

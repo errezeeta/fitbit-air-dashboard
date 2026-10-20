@@ -119,23 +119,24 @@ fun AssistantScreen(
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(26.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(15.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(13.dp),
             ) {
                 HeaderOrb(active = isWorking)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Tu asistente de salud", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("ASISTENTE DE SALUD", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+                    Text("Hermes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
                         when {
                             !backendConfigured -> "Modo demo · backend pendiente"
                             !googleConnected -> "Conecta Google Health en Ajustes"
                             !assistantConfigured -> "Google Health conectado · Hermes pendiente"
-                            else -> "Hermes · métricas consultadas al preguntar"
+                            else -> "Conectado · métricas solo al preguntar"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
