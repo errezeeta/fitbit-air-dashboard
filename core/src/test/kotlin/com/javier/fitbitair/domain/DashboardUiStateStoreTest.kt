@@ -67,6 +67,21 @@ class DashboardUiStateStoreTest {
     }
 
     @Test
+    fun changingRangeStopsThePreviousRangesRefreshIndicator() {
+        val store = DashboardUiStateStore()
+        store.updateDashboard(ready)
+        store.changeRange(TrendRange.MONTH)
+        store.updateDashboard(ready)
+        store.changeRange(TrendRange.WEEK)
+        store.beginRefresh()
+
+        store.changeRange(TrendRange.MONTH)
+
+        assertEquals(false, store.state.refreshing)
+        assertEquals(ready, store.state.dashboard)
+    }
+
+    @Test
     fun beginRefreshKeepsTheCachedDashboardInsteadOfBlanking() {
         val store = DashboardUiStateStore()
         store.updateDashboard(ready)

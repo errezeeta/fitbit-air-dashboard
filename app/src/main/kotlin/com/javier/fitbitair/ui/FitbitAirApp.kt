@@ -74,6 +74,9 @@ import com.javier.fitbitair.ui.screens.MetricDetailScreen
 import com.javier.fitbitair.ui.screens.SettingsScreen
 import com.javier.fitbitair.ui.screens.SleepScreen
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 private enum class AppTab(
@@ -164,15 +167,22 @@ fun FitbitAirApp(
             return@LaunchedEffect
         }
         handledReloadToken = reloadToken
+        val requestedRange = uiState.range
         // Keep whatever the last good load painted and refresh behind it; a
-        // blank skeleton only shows on a first run with nothing cached.
+        // blank skeleton only shows on a first load of a range.
         stateStore.beginRefresh()
         uiState = stateStore.state
         val loaded = try {
-            repository.loadDashboard(uiState.range)
+            repository.loadDashboard(requestedRange)
+        } catch (cancelled: CancellationException) {
+            // Range changes cancel the old request. Never turn that cancellation
+            // into an error state or let its result overwrite the newer range.
+            throw cancelled
         } catch (error: Exception) {
             DashboardState.Error(error.message ?: "No se pudieron cargar los datos.")
         }
+        currentCoroutineContext().ensureActive()
+        if (stateStore.state.range != requestedRange) return@LaunchedEffect
         stateStore.updateDashboard(loaded, revision = dataRevision, connected = googleConnected)
         uiState = stateStore.state
     }
@@ -520,11 +530,17 @@ private fun DashboardContent(
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize(),
     ) {
-        when (state) {
-            DashboardState.Loading -> LoadingScreen()
-            DashboardState.Empty -> EmptyScreen(onRefresh)
-            is DashboardState.Error -> ErrorScreen(state.message, onRefresh)
-            is DashboardState.Ready -> content(state.data)
+        androidx.compose.animation.Crossfade(
+            targetState = state,
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 180),
+            label = "dashboard-state-transition",
+        ) { currentState ->
+            when (currentState) {
+                DashboardState.Loading -> LoadingScreen()
+                DashboardState.Empty -> EmptyScreen(onRefresh)
+                is DashboardState.Error -> ErrorScreen(currentState.message, onRefresh)
+                is DashboardState.Ready -> content(currentState.data)
+            }
         }
     }
 }

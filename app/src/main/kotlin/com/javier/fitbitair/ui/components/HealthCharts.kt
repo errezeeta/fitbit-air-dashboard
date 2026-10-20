@@ -71,16 +71,6 @@ fun formatDurationValue(minutes: Int): String {
     return "${minutes / 60} h ${minutes % 60} min"
 }
 
-/** Short form for the value printed on top of a bar: 12,4k / 45m / 7h30. */
-private fun compactSteps(value: Int): String =
-    if (value < 1_000) "$value" else String.format(esLocale, "%.1fk", value / 1_000.0)
-
-private fun compactDistance(meters: Int): String =
-    if (meters < 1_000) "${meters}m" else String.format(esLocale, "%.1fk", meters / 1_000.0)
-
-private fun compactMinutes(minutes: Int): String =
-    if (minutes < 60) "${minutes}m" else "${minutes / 60}h%02d".format(minutes % 60)
-
 private data class TrendEntry(
     val value: Int,
     val axisLabel: String,
@@ -88,9 +78,9 @@ private data class TrendEntry(
 )
 
 /**
- * Bar charts draw in one Canvas and react to touch: pointing at a bar lifts it
- * and names the day it belongs to. Bars have square feet and a rounded crown,
- * each sits on its own track, and a dashed average line crosses the plot.
+ * Bar charts use one Canvas, a quiet three-guide grid, and a single goal line
+ * only where it applies. Exact values live in the animated selection row above,
+ * so dense ranges stay readable without labels stacked over every bar.
  */
 @Composable
 fun StepsBarChart(
@@ -102,7 +92,6 @@ fun StepsBarChart(
     TrendBarChart(
         entries = data.map { TrendEntry(it.steps, it.label, it.date) },
         tooltipDetail = { steps -> "${formatStepsCount(steps)} pasos" },
-        barValue = ::compactSteps,
         highlightColor = MaterialTheme.colorScheme.primary,
         averageLabel = averageTooltip(data.map { it.steps }) { "${formatStepsCount(it)} pasos" },
         goal = goal,
@@ -121,7 +110,6 @@ fun DistanceBarChart(
     TrendBarChart(
         entries = data.map { TrendEntry(it.meters, it.label, it.date) },
         tooltipDetail = ::formatDistanceValue,
-        barValue = ::compactDistance,
         highlightColor = MaterialTheme.colorScheme.secondary,
         averageLabel = averageTooltip(data.map { it.meters }) { formatDistanceValue(it) },
         onOpenDay = onOpenDay,
@@ -139,7 +127,6 @@ fun SleepTrendChart(
     TrendBarChart(
         entries = data.map { TrendEntry(it.summary.asleepMinutes, it.label, it.date) },
         tooltipDetail = ::formatDurationValue,
-        barValue = ::compactMinutes,
         highlightColor = MaterialTheme.colorScheme.tertiary,
         averageLabel = averageTooltip(data.map { it.summary.asleepMinutes }) { formatDurationValue(it) },
         onOpenDay = onOpenDay,
@@ -158,7 +145,6 @@ private inline fun averageTooltip(values: List<Int>, format: (Int) -> String): S
 private fun TrendBarChart(
     entries: List<TrendEntry>,
     tooltipDetail: (Int) -> String,
-    barValue: (Int) -> String,
     highlightColor: Color,
     averageLabel: String,
     goal: Int? = null,
@@ -174,7 +160,7 @@ private fun TrendBarChart(
     // Bars grow into place instead of appearing already drawn.
     val grow = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(entries) {
-        grow.snapTo(0f)
+        // Grow on first composition, but never blank the plot when a new range arrives.
         grow.animateTo(1f, androidx.compose.animation.core.tween(480, easing = androidx.compose.animation.core.FastOutSlowInEasing))
     }
     val measurer = rememberTextMeasurer()
@@ -186,11 +172,8 @@ private fun TrendBarChart(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 10.sp,
     )
-    val mutedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val goalColor = MaterialTheme.colorScheme.tertiary
-    val valueLabelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp)
     val plotHeight = 112.dp
-    val showValues = entries.size <= 10
 
     Column(modifier = modifier.fillMaxWidth()) {
         SelectedTooltip(entries, selected, tooltipDetail, highlightColor, averageLabel)
@@ -218,7 +201,7 @@ private fun TrendBarChart(
         ) {
             val plotWidth = size.width
             val baselineY = plotHeight.toPx()
-            val topInset = if (showValues) 16.dp.toPx() else 4.dp.toPx()
+            val topInset = 4.dp.toPx()
             val plotTop = topInset
             val usableHeight = baselineY - plotTop
             val slot = plotWidth / entries.size
@@ -226,23 +209,12 @@ private fun TrendBarChart(
             val maximum = entries.maxOf { it.value }
                 .coerceAtLeast(goal ?: 1)
                 .coerceAtLeast(1)
-            val average = entries.sumOf { it.value }.toFloat() / entries.size
             val crown = (barWidth / 2f).coerceAtMost(6.dp.toPx())
 
             listOf(0f, 0.5f, 1f).forEach { fraction ->
                 val y = baselineY - fraction * usableHeight
                 drawLine(gridColor, Offset(0f, y), Offset(plotWidth, y), 1.dp.toPx())
             }
-
-            // dashed average line, captioned by the chip in the header
-            val averageY = baselineY - (average / maximum) * usableHeight
-            drawLine(
-                highlightColor.copy(alpha = 0.75f * grow.value),
-                Offset(0f, averageY),
-                Offset(plotWidth, averageY),
-                1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(7f, 7f)),
-            )
 
             // The goal is what makes the bars readable at a glance: days that
             // reach it stay in full colour, the rest recede.
@@ -270,6 +242,7 @@ private fun TrendBarChart(
                 }
             }
 
+            val labelStep = if (entries.size <= 10) 1 else (entries.size / 6).coerceAtLeast(1)
             entries.forEachIndexed { index, entry ->
                 val centerX = slot * (index + 0.5f)
                 val left = centerX - barWidth / 2f
@@ -314,27 +287,11 @@ private fun TrendBarChart(
                             endY = baselineY,
                         ),
                     )
-                    if (showValues) {
-                        val measured = measurer.measure(
-                            barValue(entry.value),
-                            valueLabelStyle.copy(
-                                color = if (isSelected) highlightColor else mutedLabelColor,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            ),
-                        )
-                        drawText(
-                            measured,
-                            topLeft = Offset(
-                                (centerX - measured.size.width / 2f)
-                                    .coerceIn(0f, (plotWidth - measured.size.width).coerceAtLeast(0f)),
-                                (barTop - measured.size.height - 3.dp.toPx()).coerceAtLeast(0f),
-                            ),
-                        )
-                    }
                 }
 
                 val label = entry.axisLabel
                 if (label.isNotEmpty()) {
+                    if (index % labelStep != 0 && index != entries.lastIndex) return@forEachIndexed
                     val measured = measurer.measure(
                         label,
                         axisLabelStyle.copy(
@@ -576,15 +533,6 @@ fun HeartRateSparkline(
             val y = inset + (size.height - 2 * inset) * fraction
             drawLine(axisColor.copy(alpha = 0.12f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
         }
-
-        val averageY = inset + (size.height - 2 * inset) * (1f - (average.toFloat() - minimum) / span)
-        drawLine(
-            lineColor.copy(alpha = 0.6f),
-            Offset(0f, averageY),
-            Offset(size.width, averageY),
-            1.dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f)),
-        )
 
         val curve = Path().apply {
             moveTo(points.first().x, points.first().y)

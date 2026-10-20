@@ -101,6 +101,7 @@ class DashboardUiStateStore {
             state = state.copy(
                 range = range,
                 dashboard = cached ?: DashboardState.Loading,
+                refreshing = false,
             )
         }
     }
