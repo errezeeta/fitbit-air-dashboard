@@ -9,9 +9,12 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from backend.app.data_mapper import (
+    map_daily_series,
     map_distance_rollup,
+    map_exercise_sessions,
     map_resting_heart_rate,
     map_sleep_session,
+    map_sleep_temperature,
     map_steps_rollup,
 )
 
@@ -22,7 +25,48 @@ GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_HEALTH_BASE_URL = "https://health.googleapis.com/v4"
 GOOGLE_WEARABLES = "users/me/dataSourceFamilies/google-wearables"
 MAX_SLEEP_PAGES = 5
-_GOOGLE_REQUEST_WORKERS = 4
+MAX_EXERCISE_PAGES = 2
+# Nine concurrent Google calls: the four original metrics plus the vitals
+# bundle. Two rounds of latency beats ten sequential ones on a cold container.
+_GOOGLE_REQUEST_WORKERS = 8
+
+# metric key -> (dataType, filter identifier, response body key, value field)
+# The filter identifier uses underscores even though the path uses hyphens;
+# camelCase is rejected with an unknown-data-type error.
+_DAILY_VITALS: dict[str, tuple[str, str, str, str]] = {
+    "hrv": (
+        "daily-heart-rate-variability",
+        "daily_heart_rate_variability",
+        "dailyHeartRateVariability",
+        "averageHeartRateVariabilityMilliseconds",
+    ),
+    "oxygenSaturation": (
+        "daily-oxygen-saturation",
+        "daily_oxygen_saturation",
+        "dailyOxygenSaturation",
+        "averagePercentage",
+    ),
+    "respiratoryRate": (
+        "daily-respiratory-rate",
+        "daily_respiratory_rate",
+        "dailyRespiratoryRate",
+        "breathsPerMinute",
+    ),
+    "vo2Max": (
+        "daily-vo2-max",
+        "daily_vo2_max",
+        "dailyVo2Max",
+        "vo2Max",
+    ),
+}
+
+_VITALS_UNITS = {
+    "hrv": "ms",
+    "oxygenSaturation": "%",
+    "respiratoryRate": "rpm",
+    "sleepTemperature": "°C",
+    "vo2Max": "ml/kg/min",
+}
 
 
 class RotatingRefreshTokenStore(Protocol):
@@ -62,9 +106,9 @@ class GoogleHealthClient:
         end_day = today + timedelta(days=1)
 
         access_token = self._refresh_access_token(refresh_token)
-        # The dashboard needs four Google round trips; run them concurrently so
-        # a cold Cloud Run request stays inside one network latency instead of
-        # four. httpx.Client is safe to share across threads.
+        # Every data type is one Google round trip. Run them concurrently so a
+        # cold Cloud Run request stays inside a couple of latencies instead of
+        # ten. httpx.Client is safe to share across threads.
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=_GOOGLE_REQUEST_WORKERS
         ) as pool:
@@ -75,23 +119,43 @@ class GoogleHealthClient:
                 ),
                 "sleep": pool.submit(self._sleep_sessions, access_token, start_day, end_day),
                 "distance": pool.submit(self._steps_rollup, access_token, start_day, end_day, days, data_type="distance"),
+                "exercise": pool.submit(
+                    self._exercise_sessions, access_token, start_day, end_day
+                ),
+                "sleep_temperature": pool.submit(
+                    self._daily_points,
+                    access_token,
+                    "daily-sleep-temperature-derivations",
+                    "daily_sleep_temperature_derivations",
+                    start_day,
+                    end_day,
+                ),
             }
+            for metric, (data_type, filter_id, _body, _field) in _DAILY_VITALS.items():
+                pending[metric] = pool.submit(
+                    self._daily_points, access_token, data_type, filter_id, start_day, end_day
+                )
+            # Steps, sleep and resting heart rate are what the dashboard *is*:
+            # if Google rejects those, the app must show an error, not an empty
+            # screen. Everything else is a bonus metric and degrades to empty so
+            # a device that does not record it (or a filter Google rejects)
+            # never takes the whole dashboard down.
             steps_response = pending["steps"].result()
-            heart_rate_response = pending["heart_rate"].result()
             sleep_response = pending["sleep"].result()
-            # Distance is the newest query and the app must never lose the
-            # whole dashboard because of it: degrade to an empty trend and
-            # keep the reason in the logs.
-            try:
-                distance_response = pending["distance"].result()
-            except RuntimeError as exc:
-                logger.warning("distance rollup degraded to empty: %s", exc)
-                distance_response = {}
+            heart_rate_response = pending["heart_rate"].result()
+            optional = {
+                key: _result_or_empty(pending[key], key)
+                for key in ("distance", "exercise", "sleep_temperature", *_DAILY_VITALS)
+            }
         return _map_dashboard(
             sleep_response=sleep_response,
             steps_response=steps_response,
-            distance_response=distance_response,
+            distance_response=optional["distance"],
             heart_rate_response=heart_rate_response,
+            vitals_responses={
+                metric: optional[metric] for metric in (*_DAILY_VITALS, "sleep_temperature")
+            },
+            exercise_response=optional["exercise"],
             timezone_name=timezone_name,
             today=today,
             start_day=start_day,
@@ -189,6 +253,76 @@ class GoogleHealthClient:
         )
         return response
 
+    def _daily_points(
+        self,
+        access_token: str,
+        data_type: str,
+        filter_id: str,
+        start_day: date,
+        end_day: date,
+    ) -> dict:
+        """Fetch any ``Daily*`` data type for a civil date range.
+
+        Daily types (HRV, SpO2, respiratory rate, VO2 max, sleep temperature)
+        share the same list endpoint, the same date filter and the same
+        one-record-per-day shape, so one reader covers them all.
+        """
+        url = f"{GOOGLE_HEALTH_BASE_URL}/users/me/dataTypes/{data_type}/dataPoints"
+        query_filter = (
+            f'{filter_id}.date >= "{start_day.isoformat()}" AND '
+            f'{filter_id}.date < "{end_day.isoformat()}"'
+        )
+        points = []
+        page_token = None
+        for _ in range(MAX_EXERCISE_PAGES):
+            params = {
+                "filter": query_filter,
+                "pageSize": 100,
+                "dataSourceFamily": GOOGLE_WEARABLES,
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            response = self._authorized_request(
+                "GET", url, access_token, params=params
+            )
+            points.extend(response.get("dataPoints") or [])
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        if page_token:
+            raise RuntimeError(f"too many {data_type} records")
+        return {"dataPoints": points}
+
+    def _exercise_sessions(
+        self, access_token: str, start_day: date, end_day: date
+    ) -> dict:
+        url = f"{GOOGLE_HEALTH_BASE_URL}/users/me/dataTypes/exercise/dataPoints"
+        # Sessions filter on their own interval fields, same as sleep. The
+        # range is civil, so a ride that starts on the last day of the range
+        # still counts.
+        query_filter = (
+            f'exercise.interval.civil_start_time >= "{start_day.isoformat()}" AND '
+            f'exercise.interval.civil_start_time < "{end_day.isoformat()}"'
+        )
+        points = []
+        page_token = None
+        for _ in range(MAX_EXERCISE_PAGES):
+            params = {
+                "filter": query_filter,
+                "pageSize": 25,
+                "dataSourceFamily": GOOGLE_WEARABLES,
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            response = self._authorized_request(
+                "GET", url, access_token, params=params
+            )
+            points.extend(response.get("dataPoints") or [])
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        return {"dataPoints": points}
+
     def _sleep_sessions(
         self, access_token: str, start_day: date, end_day: date
     ) -> dict:
@@ -262,6 +396,8 @@ def _map_dashboard(
     steps_response: dict,
     distance_response: dict | None = None,
     heart_rate_response: dict,
+    vitals_responses: dict | None = None,
+    exercise_response: dict | None = None,
     timezone_name: str,
     today: date,
     start_day: date,
@@ -318,6 +454,9 @@ def _map_dashboard(
         "inBedMinutes": 0,
         "bedtime": "",
         "wakeTime": "",
+        "awakeMinutes": 0,
+        "fallAsleepMinutes": 0,
+        "afterWakeUpMinutes": 0,
         "stages": [],
     }
     sleep_trend = []
@@ -342,7 +481,50 @@ def _map_dashboard(
         "heartRateTrend": heart_rate,
         "distanceTrend": distance_trend,
         "distanceTodayMeters": distance_by_day.get(today.isoformat(), 0),
+        "vitals": _map_vitals(vitals_responses or {}, today=today),
+        "exercise": map_exercise_sessions(exercise_response or {}),
     }
+
+
+def _map_vitals(responses: dict, *, today: date) -> dict:
+    """One uniform shape per vital: unit plus ISO-dated points.
+
+    The app then renders every vital with a single card, and a data type the
+    device does not record comes back as an empty point list instead of a
+    missing key.
+    """
+    series: dict[str, list[dict]] = {}
+    for metric, (_data_type, _filter_id, body_key, value_field) in _DAILY_VITALS.items():
+        series[metric] = map_daily_series(
+            responses.get(metric) or {},
+            body_key=body_key,
+            value_field=value_field,
+        )
+    series["sleepTemperature"] = map_sleep_temperature(
+        responses.get("sleep_temperature") or {}
+    )
+
+    vitals = {}
+    for metric, points in series.items():
+        # A sleep-derived vital can carry the next civil date once the device
+        # syncs after midnight; drop anything past today so the card never
+        # shows tomorrow.
+        points = [point for point in points if point["date"] <= today.isoformat()]
+        vitals[metric] = {
+            "unit": _VITALS_UNITS[metric],
+            "points": points,
+            "latest": points[-1] if points else None,
+        }
+    return vitals
+
+
+def _result_or_empty(future: concurrent.futures.Future, label: str) -> dict:
+    """Never let one data type sink the whole dashboard."""
+    try:
+        return future.result()
+    except RuntimeError as exc:
+        logger.warning("%s degraded to empty: %s", label, exc)
+        return {}
 
 
 def _date_object(value: date) -> dict[str, int]:

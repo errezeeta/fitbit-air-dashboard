@@ -21,6 +21,12 @@ data class SleepSummary(
     val bedtime: String,
     val wakeTime: String,
     val stages: List<SleepStage>,
+    /** Minutes the restlessness algorithm counted awake during the night. */
+    val awakeMinutes: Int = 0,
+    /** Latency: how long it took to fall asleep. */
+    val fallAsleepMinutes: Int = 0,
+    /** Minutes lying in bed after waking up. */
+    val afterWakeUpMinutes: Int = 0,
 )
 
 /** One night, tied to the calendar day it belongs to (the day it ended). */
@@ -58,6 +64,49 @@ enum class MetricKind(val title: String, val kicker: String) {
     HEART("Pulso en reposo", "SALUD CARDIOVASCULAR"),
 }
 
+/** One daily reading of a vital, tied to the day it was measured. */
+data class VitalPoint(val date: LocalDate?, val value: Double)
+
+/**
+ * A vital with the shape every daily Google Health type shares: a unit and a
+ * series of one value per day. One card renders them all.
+ */
+data class VitalSeries(
+    val unit: String,
+    val points: List<VitalPoint>,
+) {
+    val latest: VitalPoint? = points.lastOrNull()
+    val average: Double? = points.takeIf { it.isNotEmpty() }?.map { it.value }?.average()
+}
+
+/**
+ * The vitals the dashboard knows how to show. A device that does not record
+ * one leaves its series empty and the card simply is not drawn.
+ */
+enum class VitalKind(
+    val label: String,
+    val kicker: String,
+    val decimals: Int,
+    val unitSuffix: String,
+) {
+    HRV("VFC", "VARIABILIDAD", 0, "ms"),
+    OXYGEN_SATURATION("SpO₂", "OXÍGENO", 0, "%"),
+    RESPIRATORY_RATE("Respiración", "RESPIRACIÓN", 1, "rpm"),
+    SLEEP_TEMPERATURE("Temp. piel", "TEMPERATURA", 1, "°C"),
+    VO2_MAX("VO₂ máx", "FITNESS", 1, ""),
+}
+
+/** One workout session, already summarised by Google Health. */
+data class ExerciseSession(
+    val date: LocalDate?,
+    val type: String,
+    val name: String,
+    val activeMinutes: Int,
+    val caloriesKcal: Int,
+    val averageHeartRate: Int,
+    val distanceMeters: Int,
+)
+
 data class DashboardData(
     val sleep: SleepSummary,
     val stepsToday: Int,
@@ -68,7 +117,14 @@ data class DashboardData(
     val heartRateTrend: List<DailyRestingHeartRate>,
     val distanceTodayMeters: Int = 0,
     val distanceTrend: List<DailyDistance> = emptyList(),
-)
+    val vitals: Map<VitalKind, VitalSeries> = emptyMap(),
+    val exercise: List<ExerciseSession> = emptyList(),
+) {
+    /** Only the vitals that actually carry readings, in display order. */
+    val availableVitals: List<Pair<VitalKind, VitalSeries>>
+        get() = VitalKind.entries
+            .mapNotNull { kind -> vitals[kind]?.takeIf { it.points.isNotEmpty() }?.let { kind to it } }
+}
 
 /** Everything the day sheet needs for one calendar day. */
 data class DaySnapshot(

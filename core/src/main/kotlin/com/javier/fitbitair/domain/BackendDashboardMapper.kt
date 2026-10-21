@@ -70,8 +70,43 @@ object BackendDashboardMapper {
                     date = date,
                 )
             },
+            vitals = mapVitals(root.objectValue("vitals")),
+            exercise = root.arrayValue("exercise").mapNotNull { element ->
+                element.objectOrNull()?.let(::mapExercise)
+            },
         )
     }
+
+    /** Vitals arrive as `{kind: {unit, points: [{date, value}]}}`; empty means absent. */
+    private fun mapVitals(json: JsonObject?): Map<VitalKind, VitalSeries> {
+        if (json == null) return emptyMap()
+        val vitals = mutableMapOf<VitalKind, VitalSeries>()
+        for ((key, kind) in VITAL_KEYS) {
+            val series = json.objectValue(key) ?: continue
+            val points = series.arrayValue("points").mapNotNull { element ->
+                val point = element.objectOrNull() ?: return@mapNotNull null
+                val date = point.stringValue("date").toLocalDateOrNull()
+                if (!point.has("value") || point.get("value").isJsonNull) return@mapNotNull null
+                VitalPoint(date = date, value = point.get("value").asDouble)
+            }
+            if (points.isEmpty()) continue
+            vitals[kind] = VitalSeries(
+                unit = series.stringValue("unit").ifEmpty { kind.unitSuffix },
+                points = points,
+            )
+        }
+        return vitals
+    }
+
+    private fun mapExercise(json: JsonObject): ExerciseSession = ExerciseSession(
+        date = json.stringValue("date").toLocalDateOrNull(),
+        type = json.stringValue("type"),
+        name = json.stringValue("name"),
+        activeMinutes = json.intValue("activeMinutes").coerceAtLeast(0),
+        caloriesKcal = json.intValue("caloriesKcal").coerceAtLeast(0),
+        averageHeartRate = json.intValue("averageHeartRate").coerceAtLeast(0),
+        distanceMeters = json.intValue("distanceMeters").coerceAtLeast(0),
+    )
 
     private fun mapSleep(json: JsonObject): SleepSummary {
         val stages = json.arrayValue("stages").mapNotNull { element ->
@@ -86,8 +121,19 @@ object BackendDashboardMapper {
             bedtime = json.stringValue("bedtime"),
             wakeTime = json.stringValue("wakeTime"),
             stages = stages,
+            awakeMinutes = json.intValue("awakeMinutes").coerceAtLeast(0),
+            fallAsleepMinutes = json.intValue("fallAsleepMinutes").coerceAtLeast(0),
+            afterWakeUpMinutes = json.intValue("afterWakeUpMinutes").coerceAtLeast(0),
         )
     }
+
+    private val VITAL_KEYS = listOf(
+        "hrv" to VitalKind.HRV,
+        "oxygenSaturation" to VitalKind.OXYGEN_SATURATION,
+        "respiratoryRate" to VitalKind.RESPIRATORY_RATE,
+        "sleepTemperature" to VitalKind.SLEEP_TEMPERATURE,
+        "vo2Max" to VitalKind.VO2_MAX,
+    )
 
     private fun String.toSleepStageKind(): SleepStageKind? = when (uppercase()) {
         "LIGHT", "ASLEEP" -> SleepStageKind.LIGHT

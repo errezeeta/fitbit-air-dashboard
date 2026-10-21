@@ -85,6 +85,21 @@ def dashboard_detail(dashboard: dict, range_name: str) -> str:
         )
         if dashboard.get(key)
     ]
+    if dashboard.get("exercise"):
+        present.append("entrenamientos")
+    vital_names = [
+        name
+        for key, name in (
+            ("hrv", "VFC"),
+            ("oxygenSaturation", "SpO2"),
+            ("respiratoryRate", "respiración"),
+            ("sleepTemperature", "temperatura"),
+            ("vo2Max", "VO2 máx"),
+        )
+        if (dashboard.get("vitals") or {}).get(key, {}).get("points")
+    ]
+    if vital_names:
+        present.append("constantes (" + ", ".join(vital_names) + ")")
     days = "7 días" if range_name == "week" else "30 días"
     if not present:
         return days

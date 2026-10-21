@@ -115,4 +115,49 @@ class BackendDashboardMapperTest {
         assertTrue(labels.first().isNotEmpty())
         assertTrue(labels.last().isNotEmpty())
     }
+
+    @Test
+    fun readsVitalsAndWorkoutsAndIgnoresEmptyVitals() {
+        val json = """
+            {
+              "status": "ready",
+              "sleep": {"asleepMinutes": 450, "inBedMinutes": 480, "bedtime": "23:00",
+                        "wakeTime": "07:00", "awakeMinutes": 25, "fallAsleepMinutes": 12,
+                        "afterWakeUpMinutes": 4, "stages": []},
+              "stepsToday": 6100,
+              "restingHeartRate": 58,
+              "stepsTrend": [],
+              "sleepTrend": [],
+              "heartRateTrend": [],
+              "vitals": {
+                "hrv": {"unit": "ms", "points": [
+                  {"date": "2026-10-12", "value": 40.0},
+                  {"date": "2026-10-13", "value": 44.0}
+                ]},
+                "oxygenSaturation": {"unit": "%", "points": []},
+                "sleepTemperature": {"unit": "°C", "points": [{"date": "2026-10-13", "value": 0.3}]}
+              },
+              "exercise": [
+                {"date": "2026-10-13", "type": "RUNNING", "name": "Carrera",
+                 "activeMinutes": 40, "caloriesKcal": 312, "averageHeartRate": 148,
+                 "distanceMeters": 6120}
+              ]
+            }
+        """.trimIndent()
+
+        val state = BackendDashboardMapper.parse(json, TrendRange.WEEK)
+        val data = (state as DashboardState.Ready).data
+
+        assertEquals(12, data.sleep.fallAsleepMinutes)
+        assertEquals(25, data.sleep.awakeMinutes)
+        // Only the vitals that carry readings are offered to the UI, in enum order.
+        assertEquals(
+            listOf(VitalKind.HRV, VitalKind.SLEEP_TEMPERATURE),
+            data.availableVitals.map { it.first },
+        )
+        assertEquals(44.0, data.availableVitals.first().second.latest?.value ?: 0.0, 0.001)
+        assertEquals(1, data.exercise.size)
+        assertEquals("RUNNING", data.exercise.first().type)
+        assertEquals(6120, data.exercise.first().distanceMeters)
+    }
 }

@@ -64,7 +64,9 @@ import com.javier.fitbitair.domain.sleepEfficiencyPercent
 import com.javier.fitbitair.domain.stepProgress
 import com.javier.fitbitair.domain.trendDelta
 import com.javier.fitbitair.ui.components.DistanceBarChart
+import com.javier.fitbitair.ui.components.ExerciseSection
 import com.javier.fitbitair.ui.components.PageHeader
+import com.javier.fitbitair.ui.components.VitalsSection
 import com.javier.fitbitair.ui.components.StaggeredAppear
 import com.javier.fitbitair.ui.components.clickableScaled
 import com.javier.fitbitair.ui.components.HeartRateSparkline
@@ -124,8 +126,15 @@ fun HomeScreen(
             }
         }
 
-    }
+        StaggeredAppear(index = 3) {
+            VitalsSection(data.availableVitals)
+        }
 
+        StaggeredAppear(index = 4) {
+            ExerciseSection(data.exercise)
+        }
+
+    }
     if (showGoalDialog) {
         StepGoalDialog(
             currentGoal = stepGoal,
@@ -311,6 +320,8 @@ fun SleepScreen(
         SleepSummaryStrip(
             efficiency = efficiency,
             deepMinutes = data.sleep.stages.firstOrNull { it.kind == SleepStageKind.DEEP }?.minutes ?: 0,
+            fallAsleepMinutes = data.sleep.fallAsleepMinutes,
+            awakeMinutes = data.sleep.awakeMinutes,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = !showStages, onClick = { showStages = false }, label = { Text("Duración") })
@@ -344,26 +355,55 @@ fun SleepScreen(
 }
 
 @Composable
-private fun SleepSummaryStrip(efficiency: Int?, deepMinutes: Int) {
+private fun SleepSummaryStrip(
+    efficiency: Int?,
+    deepMinutes: Int,
+    fallAsleepMinutes: Int = 0,
+    awakeMinutes: Int = 0,
+) {
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("EFICIENCIA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
-                Text(efficiency?.let { "$it%" } ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("tiempo dormido / en cama", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("EFICIENCIA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                    Text(efficiency?.let { "$it%" } ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("tiempo dormido / en cama", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Box(Modifier.width(1.dp).height(48.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("SUEÑO PROFUNDO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                    Text(deepMinutes.takeIf { it > 0 }?.let(::formatDurationValue) ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(if (deepMinutes > 0) "fase registrada" else "sin registro", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            Box(Modifier.width(1.dp).height(48.dp).background(MaterialTheme.colorScheme.outlineVariant))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("SUEÑO PROFUNDO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
-                Text(deepMinutes.takeIf { it > 0 }?.let(::formatDurationValue) ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text(if (deepMinutes > 0) "fase registrada" else "sin registro", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Latency and awake time come from the same sleep summary the
+            // duration does: no extra request, just fields nobody was reading.
+            if (fallAsleepMinutes > 0 || awakeMinutes > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("EN DORMIRSE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                        Text(fallAsleepMinutes.takeIf { it > 0 }?.let { "$it min" } ?: "—", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    Box(Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("DESPIERTO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                        Text(awakeMinutes.takeIf { it > 0 }?.let { "$it min" } ?: "—", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
     }

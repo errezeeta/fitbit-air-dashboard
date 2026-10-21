@@ -33,12 +33,107 @@ def map_sleep_session(session: dict, timezone_name: str = "UTC") -> dict:
         "inBedMinutes": in_bed,
         "bedtime": start.astimezone(zone).strftime("%H:%M"),
         "wakeTime": end.astimezone(zone).strftime("%H:%M"),
+        # Restlessness-derived fields. A missing value means Google did not
+        # compute it for that night, which reads better as 0 than as null.
+        "awakeMinutes": _optional_int(summary.get("minutesAwake")) or 0,
+        "fallAsleepMinutes": _optional_int(summary.get("minutesToFallAsleep")) or 0,
+        "afterWakeUpMinutes": _optional_int(summary.get("minutesAfterWakeUp")) or 0,
         "stages": [
             {"kind": kind, "minutes": stage_minutes[kind]}
             for kind in _STAGE_ORDER
             if stage_minutes.get(kind, 0) > 0
         ],
     }
+
+
+def map_daily_series(
+    response: dict,
+    *,
+    body_key: str,
+    value_field: str,
+    digits: int = 1,
+) -> list[dict]:
+    """Flatten any daily Google Health record into ISO-dated numeric points.
+
+    Every ``Daily*`` data type (HRV, SpO2, respiratory rate, VO2 max...) is the
+    same shape: a civil date plus one interesting number. One generic reader
+    keeps the dashboard payload uniform, so the app renders them all with a
+    single card component instead of five bespoke ones.
+    """
+    points: list[dict] = []
+    for point in response.get("dataPoints") or []:
+        record = point.get(body_key) or {}
+        iso_date = _date_string(record.get("date"))
+        raw = record.get(value_field)
+        if iso_date is None or raw is None:
+            continue
+        value = _optional_float(raw)
+        if value is None:
+            continue
+        points.append({"date": iso_date, "value": round(value, digits)})
+    points.sort(key=lambda item: item["date"])
+    return points
+
+
+def map_sleep_temperature(response: dict) -> list[dict]:
+    """Nightly skin temperature minus the user's own 30-day baseline.
+
+    The absolute nightly value means nothing on its own; the deviation from the
+    baseline is the signal (illness, alcohol, overtraining).
+    """
+    points: list[dict] = []
+    for point in response.get("dataPoints") or []:
+        record = point.get("dailySleepTemperatureDerivations") or {}
+        iso_date = _date_string(record.get("date"))
+        nightly = _optional_float(record.get("nightlyTemperatureCelsius"))
+        baseline = _optional_float(record.get("baselineTemperatureCelsius"))
+        if iso_date is None or nightly is None or baseline is None:
+            continue
+        points.append({"date": iso_date, "value": round(nightly - baseline, 2)})
+    points.sort(key=lambda item: item["date"])
+    return points
+
+
+def map_exercise_sessions(response: dict, limit: int = 10) -> list[dict]:
+    """Convert exercise data points to dashboard workout cards, newest first."""
+    sessions: list[dict] = []
+    for point in response.get("dataPoints") or []:
+        exercise = point.get("exercise") or {}
+        interval = exercise.get("interval") or {}
+        start_value = interval.get("startTime")
+        end_value = interval.get("endTime")
+        if not start_value or not end_value:
+            continue
+        try:
+            start = _parse_timestamp(start_value)
+            end = _parse_timestamp(end_value)
+        except ValueError:
+            continue
+        metrics = exercise.get("metricsSummary") or {}
+        minutes = _duration_minutes(exercise.get("activeDuration"))
+        if minutes == 0:
+            minutes = round((end - start).total_seconds() / 60)
+        distance_millimeters = metrics.get("distanceMillimeters")
+        sessions.append(
+            {
+                "startTime": start.isoformat(),
+                "date": start.date().isoformat(),
+                "type": str(exercise.get("exerciseType") or "OTHER"),
+                "name": str(exercise.get("displayName") or ""),
+                "activeMinutes": max(minutes, 0),
+                "caloriesKcal": round(_optional_float(metrics.get("caloriesKcal")) or 0.0),
+                "averageHeartRate": _optional_int(
+                    metrics.get("averageHeartRateBeatsPerMinute")
+                )
+                or 0,
+                "distanceMeters": round(
+                    (_optional_float(distance_millimeters) or 0.0)
+                    / _MILLIMETERS_PER_METER
+                ),
+            }
+        )
+    sessions.sort(key=lambda item: item["startTime"], reverse=True)
+    return sessions[:limit]
 
 
 def map_steps_rollup(response: dict) -> list[dict]:
@@ -142,6 +237,25 @@ def _optional_int(value: int | str | None) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
+
+
+def _optional_float(value: float | int | str | None) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _duration_minutes(value: object) -> int:
+    """Seconds-as-Duration (``"1234.5s"``) to whole minutes."""
+    if not isinstance(value, str) or not value.endswith("s"):
+        return 0
+    try:
+        return round(float(value[:-1]) / 60)
+    except ValueError:
+        return 0
 
 
 def _parse_timestamp(value: str) -> datetime:
