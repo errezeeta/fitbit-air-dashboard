@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The morning brief is a local notification; Android 13+ requires the
+         runtime permission or the worker's notification is silently dropped. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Required to hand the downloaded APK to the system installer; without it
          Android resolves the install intent to nothing and the tap does nothing. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

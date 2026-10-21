@@ -21,6 +21,8 @@ data class SleepSummary(
     val bedtime: String,
     val wakeTime: String,
     val stages: List<SleepStage>,
+    /** ISO instant the sleep session ended, with its UTC offset. */
+    val endTimeIso: String = "",
     /** Minutes the restlessness algorithm counted awake during the night. */
     val awakeMinutes: Int = 0,
     /** Latency: how long it took to fall asleep. */

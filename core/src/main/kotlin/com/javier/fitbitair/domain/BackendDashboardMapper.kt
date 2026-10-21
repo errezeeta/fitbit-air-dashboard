@@ -121,6 +121,7 @@ object BackendDashboardMapper {
             bedtime = json.stringValue("bedtime"),
             wakeTime = json.stringValue("wakeTime"),
             stages = stages,
+            endTimeIso = json.stringValue("endTime"),
             awakeMinutes = json.intValue("awakeMinutes").coerceAtLeast(0),
             fallAsleepMinutes = json.intValue("fallAsleepMinutes").coerceAtLeast(0),
             afterWakeUpMinutes = json.intValue("afterWakeUpMinutes").coerceAtLeast(0),

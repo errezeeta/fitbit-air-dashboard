@@ -33,6 +33,9 @@ def map_sleep_session(session: dict, timezone_name: str = "UTC") -> dict:
         "inBedMinutes": in_bed,
         "bedtime": start.astimezone(zone).strftime("%H:%M"),
         "wakeTime": end.astimezone(zone).strftime("%H:%M"),
+        # The clock time alone cannot be turned into "20 minutes after waking":
+        # the app needs the instant, with its offset.
+        "endTime": end.isoformat(),
         # Restlessness-derived fields. A missing value means Google did not
         # compute it for that night, which reads better as 0 than as null.
         "awakeMinutes": _optional_int(summary.get("minutesAwake")) or 0,

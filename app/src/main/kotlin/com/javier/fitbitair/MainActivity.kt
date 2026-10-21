@@ -1,15 +1,25 @@
 package com.javier.fitbitair
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.javier.fitbitair.data.AppUpdater
 import com.javier.fitbitair.data.BackendHealthRepository
+import com.javier.fitbitair.data.DailyBriefWorker
 import com.javier.fitbitair.data.SampleHealthRepository
 import com.javier.fitbitair.data.SessionTokenStore
 import com.javier.fitbitair.data.StepGoalStore
@@ -20,6 +30,7 @@ import com.javier.fitbitair.domain.HealthRepository
 import com.javier.fitbitair.ui.FitbitAirApp
 import com.javier.fitbitair.ui.theme.FitbitAirTheme
 import java.time.ZoneId
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -108,6 +119,40 @@ class MainActivity : ComponentActivity() {
 
         refreshBackendStatus()
         handleOAuthCallback(intent)
+        scheduleDailyBrief()
+        requestNotificationPermissionIfNeeded()
+    }
+
+    /**
+     * The morning brief survives restarts because the work is unique and
+     * persisted: enqueued with KEEP, a re-launch never resets the schedule.
+     */
+    private fun scheduleDailyBrief() {
+        val request = PeriodicWorkRequestBuilder<DailyBriefWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build(),
+            )
+            .build()
+        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+            DailyBriefWorker.UNIQUE_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     override fun onNewIntent(intent: Intent) {

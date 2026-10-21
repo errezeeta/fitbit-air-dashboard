@@ -65,6 +65,7 @@ class SleepMapperTest(unittest.TestCase):
         self.assertEqual(485, mapped["asleepMinutes"])
         self.assertEqual("22:30", mapped["bedtime"])
         self.assertEqual("06:45", mapped["wakeTime"])
+        self.assertEqual("2026-10-14T06:45:00+00:00", mapped["endTime"])
         self.assertEqual(
             {"LIGHT": 335, "DEEP": 90, "REM": 60, "AWAKE": 10},
             {stage["kind"]: stage["minutes"] for stage in mapped["stages"]},

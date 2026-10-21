@@ -454,6 +454,7 @@ def _map_dashboard(
         "inBedMinutes": 0,
         "bedtime": "",
         "wakeTime": "",
+        "endTime": "",
         "awakeMinutes": 0,
         "fallAsleepMinutes": 0,
         "afterWakeUpMinutes": 0,
