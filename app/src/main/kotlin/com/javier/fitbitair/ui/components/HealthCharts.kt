@@ -1,12 +1,16 @@
 package com.javier.fitbitair.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +41,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -89,11 +94,18 @@ fun StepsBarChart(
     onOpenDay: ((LocalDate) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // Remembered per dataset: every recomposition of the parent (a range chip,
+    // the refreshing flag) used to allocate a fresh entry list, which also
+    // invalidated pointerInput and the selection inside the chart.
+    val entries = remember(data) { data.map { TrendEntry(it.steps, it.label, it.date) } }
+    val averageLabel = remember(data) {
+        averageTooltip(data.map { it.steps }) { "${formatStepsCount(it)} pasos" }
+    }
     TrendBarChart(
-        entries = data.map { TrendEntry(it.steps, it.label, it.date) },
+        entries = entries,
         tooltipDetail = { steps -> "${formatStepsCount(steps)} pasos" },
         highlightColor = MaterialTheme.colorScheme.primary,
-        averageLabel = averageTooltip(data.map { it.steps }) { "${formatStepsCount(it)} pasos" },
+        averageLabel = averageLabel,
         goal = goal,
         goalLabel = goal?.let { "meta ${formatStepsCount(it)}" } ?: "",
         onOpenDay = onOpenDay,
@@ -107,11 +119,15 @@ fun DistanceBarChart(
     onOpenDay: ((LocalDate) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val entries = remember(data) { data.map { TrendEntry(it.meters, it.label, it.date) } }
+    val averageLabel = remember(data) {
+        averageTooltip(data.map { it.meters }) { formatDistanceValue(it) }
+    }
     TrendBarChart(
-        entries = data.map { TrendEntry(it.meters, it.label, it.date) },
+        entries = entries,
         tooltipDetail = ::formatDistanceValue,
         highlightColor = MaterialTheme.colorScheme.secondary,
-        averageLabel = averageTooltip(data.map { it.meters }) { formatDistanceValue(it) },
+        averageLabel = averageLabel,
         onOpenDay = onOpenDay,
         modifier = modifier,
     )
@@ -124,11 +140,15 @@ fun SleepTrendChart(
     onOpenDay: ((LocalDate) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val entries = remember(data) { data.map { TrendEntry(it.summary.asleepMinutes, it.label, it.date) } }
+    val averageLabel = remember(data) {
+        averageTooltip(data.map { it.summary.asleepMinutes }) { formatDurationValue(it) }
+    }
     TrendBarChart(
-        entries = data.map { TrendEntry(it.summary.asleepMinutes, it.label, it.date) },
+        entries = entries,
         tooltipDetail = ::formatDurationValue,
         highlightColor = MaterialTheme.colorScheme.tertiary,
-        averageLabel = averageTooltip(data.map { it.summary.asleepMinutes }) { formatDurationValue(it) },
+        averageLabel = averageLabel,
         onOpenDay = onOpenDay,
         modifier = modifier,
     )
@@ -157,11 +177,20 @@ private fun TrendBarChart(
         return
     }
     var selected by remember(entries) { mutableStateOf(entries.lastIndex) }
-    // Bars grow into place instead of appearing already drawn.
-    val grow = remember { androidx.compose.animation.core.Animatable(0f) }
+    // Bars grow into place on first appearance; a later range or a refresh
+    // keeps the plot drawn and only fades it back in, so switching ranges never
+    // empties the chart.
+    val grow = remember { Animatable(0f) }
+    val plotAlpha = remember { Animatable(1f) }
+    var drawnOnce by remember { mutableStateOf(false) }
     LaunchedEffect(entries) {
-        // Grow on first composition, but never blank the plot when a new range arrives.
-        grow.animateTo(1f, androidx.compose.animation.core.tween(480, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        if (!drawnOnce) {
+            drawnOnce = true
+            grow.animateTo(1f, tween(480, easing = FastOutSlowInEasing))
+        } else {
+            plotAlpha.snapTo(0.45f)
+            plotAlpha.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
+        }
     }
     val measurer = rememberTextMeasurer()
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
@@ -172,7 +201,25 @@ private fun TrendBarChart(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 10.sp,
     )
+    // Measured once per dataset. Measuring inside the draw lambda ran a text
+    // layout per bar per frame while the bars were growing — the single most
+    // expensive thing on this screen.
+    val axisLabels = remember(entries, axisLabelStyle) {
+        entries.map { measurer.measure(it.axisLabel, axisLabelStyle) }
+    }
+    val selectedLabelStyle = remember(axisLabelStyle, highlightColor) {
+        axisLabelStyle.copy(color = highlightColor, fontWeight = FontWeight.SemiBold)
+    }
+    val selectedLabel = remember(entries, selected, selectedLabelStyle) {
+        entries.getOrNull(selected)?.let { measurer.measure(it.axisLabel, selectedLabelStyle) }
+    }
     val goalColor = MaterialTheme.colorScheme.tertiary
+    // Also measured outside the draw lambda: the goal tag is redrawn on every
+    // animation frame while the bars grow.
+    val goalText = remember(goalLabel, goalColor, axisLabelStyle) {
+        if (goalLabel.isEmpty()) null
+        else measurer.measure(goalLabel, axisLabelStyle.copy(color = goalColor, fontSize = 9.sp))
+    }
     val plotHeight = 112.dp
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -181,20 +228,29 @@ private fun TrendBarChart(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(plotHeight + 26.dp)
+                .graphicsLayer { alpha = plotAlpha.value }
                 .pointerInput(entries, onOpenDay) {
                     detectTapGestures(
                         onTap = { offset ->
-                            selected = (offset.x / (size.width / entries.size))
-                                .toInt()
-                                .coerceIn(0, entries.lastIndex)
+                            selected = barIndexAt(offset.x, size.width.toFloat(), entries.lastIndex)
                         },
                         // Holding a bar opens that day: which day, what was recorded.
                         onLongPress = { offset ->
-                            val index = (offset.x / (size.width / entries.size))
-                                .toInt()
-                                .coerceIn(0, entries.lastIndex)
+                            val index = barIndexAt(offset.x, size.width.toFloat(), entries.lastIndex)
                             selected = index
                             entries.getOrNull(index)?.date?.let { day -> onOpenDay?.invoke(day) }
+                        },
+                    )
+                }
+                .pointerInput(entries) {
+                    // Scrubbing: dragging a thumb across a month should read day
+                    // by day, not need thirty separate taps.
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            selected = barIndexAt(offset.x, size.width.toFloat(), entries.lastIndex)
+                        },
+                        onDrag = { change, _ ->
+                            selected = barIndexAt(change.position.x, size.width.toFloat(), entries.lastIndex)
                         },
                     )
                 },
@@ -227,16 +283,12 @@ private fun TrendBarChart(
                     1.4.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 5f)),
                 )
-                if (goalLabel.isNotEmpty()) {
-                    val measured = measurer.measure(
-                        goalLabel,
-                        axisLabelStyle.copy(color = goalColor, fontSize = 9.sp),
-                    )
+                if (goalText != null) {
                     drawText(
-                        measured,
+                        goalText,
                         topLeft = Offset(
                             3.dp.toPx(),
-                            (goalY - measured.size.height - 2.dp.toPx()).coerceAtLeast(0f),
+                            (goalY - goalText.size.height - 2.dp.toPx()).coerceAtLeast(0f),
                         ),
                     )
                 }
@@ -292,21 +344,17 @@ private fun TrendBarChart(
                 val label = entry.axisLabel
                 if (label.isNotEmpty()) {
                     if (index % labelStep != 0 && index != entries.lastIndex) return@forEachIndexed
-                    val measured = measurer.measure(
-                        label,
-                        axisLabelStyle.copy(
-                            color = if (isSelected) highlightColor else axisLabelStyle.color,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        ),
-                    )
-                    drawText(
-                        measured,
-                        topLeft = Offset(
-                            (centerX - measured.size.width / 2f)
-                                .coerceIn(0f, (plotWidth - measured.size.width).coerceAtLeast(0f)),
-                            baselineY + 9.dp.toPx(),
-                        ),
-                    )
+                    val measured = if (isSelected) selectedLabel else axisLabels.getOrNull(index)
+                    if (measured != null) {
+                        drawText(
+                            measured,
+                            topLeft = Offset(
+                                (centerX - measured.size.width / 2f)
+                                    .coerceIn(0f, (plotWidth - measured.size.width).coerceAtLeast(0f)),
+                                baselineY + 9.dp.toPx(),
+                            ),
+                        )
+                    }
                 }
             }
 
@@ -319,6 +367,23 @@ private fun TrendBarChart(
             )
         }
     }
+}
+
+/**
+ * Pointer x to entry index. Mirrors the drawing math (slot = width / n, bar
+ * centre = slot * (i + 0.5)) so a tap and a scrub land on the bar under the
+ * finger instead of its neighbour.
+ */
+internal fun barIndexAt(x: Float, width: Float, lastIndex: Int): Int {
+    if (lastIndex <= 0 || width <= 0f) return 0
+    val slot = width / (lastIndex + 1)
+    return (x / slot).toInt().coerceIn(0, lastIndex)
+}
+
+/** Line charts spread their points edges-to-edges, so the mapping differs. */
+private fun pointIndexAt(x: Float, width: Float, lastIndex: Int): Int {
+    if (lastIndex <= 0 || width <= 0f) return 0
+    return ((x / width) * lastIndex).toInt().coerceIn(0, lastIndex)
 }
 
 /**
@@ -472,8 +537,8 @@ fun HeartRateSparkline(
     val lineColor = MaterialTheme.colorScheme.tertiary
     val axisColor = MaterialTheme.colorScheme.outline
     val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)
-    val values = data.map { it.beatsPerMinute.toFloat() }
-    val average = values.average()
+    val values = remember(data) { data.map { it.beatsPerMinute.toFloat() } }
+    val average = remember(values) { values.average() }
     val selectionSurface = MaterialTheme.colorScheme.surface
 
     AnimatedContent(
@@ -507,15 +572,24 @@ fun HeartRateSparkline(
             .fillMaxWidth()
             .height(84.dp)
             .pointerInput(data, onOpenDay) {
-                fun indexAt(x: Float): Int = if (data.size == 1) 0 else {
-                    ((x / size.width) * data.lastIndex).toInt().coerceIn(0, data.lastIndex)
-                }
                 detectTapGestures(
-                    onTap = { offset -> selected = indexAt(offset.x) },
+                    onTap = { offset -> selected = pointIndexAt(offset.x, size.width.toFloat(), data.lastIndex) },
                     onLongPress = { offset ->
-                        val index = indexAt(offset.x)
+                        val index = pointIndexAt(offset.x, size.width.toFloat(), data.lastIndex)
                         selected = index
                         data[index].date?.let { onOpenDay?.invoke(it) }
+                    },
+                )
+            }
+            .pointerInput(data) {
+                // Same gesture as the bar charts: drag to move the marker along
+                // the line instead of tapping point by point.
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        selected = pointIndexAt(offset.x, size.width.toFloat(), data.lastIndex)
+                    },
+                    onDrag = { change, _ ->
+                        selected = pointIndexAt(change.position.x, size.width.toFloat(), data.lastIndex)
                     },
                 )
             },
@@ -533,6 +607,18 @@ fun HeartRateSparkline(
             val y = inset + (size.height - 2 * inset) * fraction
             drawLine(axisColor.copy(alpha = 0.12f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
         }
+
+        // The period average the header chip names, drawn as a faint dashed
+        // reference: "media 58 lpm" with nothing to compare it against is a
+        // number looking for a place to point.
+        val averageY = inset + (size.height - 2 * inset) * (1f - ((average - minimum) / span).toFloat())
+        drawLine(
+            lineColor.copy(alpha = 0.30f),
+            Offset(0f, averageY),
+            Offset(size.width, averageY),
+            1.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 6f)),
+        )
 
         val curve = Path().apply {
             moveTo(points.first().x, points.first().y)
@@ -590,7 +676,7 @@ fun HeartRateSparkline(
         )
     }
     Text(
-        "Toca un punto para ver el dato · mantén pulsado para abrir el día",
+        "Toca o arrastra para recorrer las lecturas · mantén pulsado para abrir el día",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 2.dp),

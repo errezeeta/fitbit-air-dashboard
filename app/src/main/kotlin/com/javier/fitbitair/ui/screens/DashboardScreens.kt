@@ -74,6 +74,7 @@ import com.javier.fitbitair.ui.components.SleepStagesChart
 import com.javier.fitbitair.ui.components.SleepTrendChart
 import com.javier.fitbitair.ui.components.StepsBarChart
 import com.javier.fitbitair.ui.components.formatDistanceValue
+import com.javier.fitbitair.ui.components.formatDurationValue
 import com.javier.fitbitair.ui.components.formatStepsCount
 
 @Composable
@@ -219,7 +220,7 @@ private fun TodayOverviewCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 TodayMetricTile(
                     label = "SUEÑO",
-                    value = data.sleep.asleepMinutes.takeIf { it > 0 }?.let(::formatDuration) ?: "—",
+                    value = data.sleep.asleepMinutes.takeIf { it > 0 }?.let(::formatDurationValue) ?: "—",
                     note = if (data.sleep.asleepMinutes > 0) "última noche" else "sin registro",
                     icon = { Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
                     onClick = onOpenSleep,
@@ -323,10 +324,19 @@ fun SleepScreen(
         ) {
             if (data.sleepTrend.isEmpty()) {
                 TrendEmptyState("Todavía no hay noches registradas", "El gráfico aparecerá cuando Google Health tenga datos de sueño.")
-            } else if (showStages) {
-                SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
             } else {
-                SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
+                if (showStages) {
+                    SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
+                } else {
+                    SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
+                }
+                // The long press is invisible: say the gesture exists, on the tab
+                // where the chart lives.
+                Text(
+                    "Toca o arrastra una noche para ver su reparto · mantén pulsado para abrir su ficha",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         InfoNote("La eficiencia es un cálculo propio (tiempo dormido ÷ tiempo en cama), no el Sleep Score de Fitbit.")
@@ -352,7 +362,7 @@ private fun SleepSummaryStrip(efficiency: Int?, deepMinutes: Int) {
             Box(Modifier.width(1.dp).height(48.dp).background(MaterialTheme.colorScheme.outlineVariant))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("SUEÑO PROFUNDO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
-                Text(deepMinutes.takeIf { it > 0 }?.let(::formatDuration) ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(deepMinutes.takeIf { it > 0 }?.let(::formatDurationValue) ?: "—", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(if (deepMinutes > 0) "fase registrada" else "sin registro", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -421,7 +431,7 @@ fun ActivityScreen(
 private fun SleepHeroCard(sleep: SleepSummary, onOpen: () -> Unit) {
     val foreground = MaterialTheme.colorScheme.onSecondaryContainer
     Card(
-        modifier = Modifier.fillMaxWidth().clickableScaled(onClick = onOpen),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).clickableScaled(onClick = onOpen),
         shape = RoundedCornerShape(30.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
@@ -491,7 +501,7 @@ private fun StepsGoalCard(
     )
     ElevatedCard(
         shape = RoundedCornerShape(28.dp),
-        modifier = Modifier.fillMaxWidth().clickableScaled(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).clickableScaled(onClick = onClick),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)),
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
@@ -556,7 +566,7 @@ private fun RestingHeartDetail(
     onOpenDay: (LocalDate) -> Unit = {},
 ) {
     val current = data.restingHeartRate.takeIf { it > 0 }
-    ElevatedCard(shape = RoundedCornerShape(26.dp), modifier = Modifier.clickableScaled(onClick = onOpenDetail)) {
+    ElevatedCard(shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).clickableScaled(onClick = onOpenDetail)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column {
@@ -577,7 +587,7 @@ private fun RestingHeartDetail(
             }
             HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay, modifier = Modifier.fillMaxWidth())
             if (data.heartRateTrend.isNotEmpty()) {
-                val readings = data.heartRateTrend.map { it.beatsPerMinute }
+                val readings = remember(data.heartRateTrend) { data.heartRateTrend.map { it.beatsPerMinute } }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -689,11 +699,6 @@ private fun TrendEmptyState(title: String, body: String) {
 @Composable
 private fun InfoNote(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
-}
-
-private fun formatDuration(minutes: Int): String {
-    if (minutes <= 0) return "—"
-    return "${minutes / 60} h ${minutes % 60} min"
 }
 
 private fun todayLabel(): String = LocalDate.now()

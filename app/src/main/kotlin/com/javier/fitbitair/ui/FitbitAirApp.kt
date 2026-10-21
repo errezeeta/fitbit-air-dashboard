@@ -286,17 +286,18 @@ fun FitbitAirApp(
             val openDetail = detailMetric
             if (openDetail != null) {
                 com.javier.fitbitair.ui.components.SlideInFromEnd(modifier = Modifier.weight(1f)) {
-                    AnimatedContent(targetState = uiState.dashboard, label = "detail-transition") { state ->
-                        DashboardContent(state, isRefreshing = uiState.refreshing, onRefresh = { stateStore.markStale(); reloadToken++ }) { data ->
-                            MetricDetailScreen(
-                                kind = openDetail,
-                                data = data,
-                                range = uiState.range,
-                                stepGoal = uiState.stepGoal,
-                                onRangeChange = ::changeRange,
-                                onOpenDay = { daySheet = it },
-                            )
-                        }
+                    // No AnimatedContent here: DashboardContent already crossfades
+                    // when the state kind changes, and wrapping it again re-ran a
+                    // full-screen transition on every refresh.
+                    DashboardContent(uiState.dashboard, isRefreshing = uiState.refreshing, onRefresh = { stateStore.markStale(); reloadToken++ }) { data ->
+                        MetricDetailScreen(
+                            kind = openDetail,
+                            data = data,
+                            range = uiState.range,
+                            stepGoal = uiState.stepGoal,
+                            onRangeChange = ::changeRange,
+                            onOpenDay = { daySheet = it },
+                        )
                     }
                 }
                 return@Column
@@ -530,20 +531,35 @@ private fun DashboardContent(
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize(),
     ) {
+        // Crossfade on the KIND of state, never on the state object itself:
+        // Ready carries the data, so keying it here crossfaded whole screens —
+        // three of them, because the pager keeps its neighbours composed — on
+        // every single refresh instead of just repainting the numbers.
+        val stage = when (state) {
+            DashboardState.Loading -> STAGE_LOADING
+            DashboardState.Empty -> STAGE_EMPTY
+            is DashboardState.Error -> STAGE_ERROR
+            is DashboardState.Ready -> STAGE_READY
+        }
         androidx.compose.animation.Crossfade(
-            targetState = state,
+            targetState = stage,
             animationSpec = androidx.compose.animation.core.tween(durationMillis = 180),
             label = "dashboard-state-transition",
-        ) { currentState ->
-            when (currentState) {
-                DashboardState.Loading -> LoadingScreen()
-                DashboardState.Empty -> EmptyScreen(onRefresh)
-                is DashboardState.Error -> ErrorScreen(currentState.message, onRefresh)
-                is DashboardState.Ready -> content(currentState.data)
+        ) { currentStage ->
+            when (currentStage) {
+                STAGE_LOADING -> LoadingScreen()
+                STAGE_EMPTY -> EmptyScreen(onRefresh)
+                STAGE_ERROR -> ErrorScreen((state as? DashboardState.Error)?.message.orEmpty(), onRefresh)
+                else -> (state as? DashboardState.Ready)?.let { content(it.data) }
             }
         }
     }
 }
+
+private const val STAGE_LOADING = 0
+private const val STAGE_EMPTY = 1
+private const val STAGE_ERROR = 2
+private const val STAGE_READY = 3
 
 @Composable
 private fun DataSourceBanner(backendConfigured: Boolean, googleConnected: Boolean) {

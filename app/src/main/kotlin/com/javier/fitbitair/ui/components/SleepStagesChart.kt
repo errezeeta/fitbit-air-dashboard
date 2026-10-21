@@ -1,6 +1,10 @@
 package com.javier.fitbitair.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +59,14 @@ fun SleepStagesChart(
 ) {
     if (nights.isEmpty()) return
     var selected by remember(nights) { mutableStateOf(nights.lastIndex) }
+    // Bands rise from the axis the first time the chart appears; a later range
+    // keeps them drawn, so switching never empties the plot.
+    val grow = remember { Animatable(0f) }
+    LaunchedEffect(nights) { grow.animateTo(1f, tween(520, easing = FastOutSlowInEasing)) }
+    // Stacked bands are computed once per dataset, not per frame: the draw loop
+    // now runs on every animation frame.
+    val bandsPerNight = remember(nights) { nights.map { bandsOf(it.summary) } }
+    val totals = remember(nights) { nights.map { it.summary.asleepMinutes } }
     val measurer = rememberTextMeasurer()
     val deepColor = MaterialTheme.colorScheme.tertiary
     val remColor = MaterialTheme.colorScheme.primary
@@ -104,16 +117,23 @@ fun SleepStagesChart(
                 .pointerInput(nights, onOpenDay) {
                     detectTapGestures(
                         onTap = { offset ->
-                            selected = (offset.x / (size.width / nights.size))
-                                .toInt()
-                                .coerceIn(0, nights.lastIndex)
+                            selected = barIndexAt(offset.x, size.width.toFloat(), nights.lastIndex)
                         },
                         onLongPress = { offset ->
-                            val index = (offset.x / (size.width / nights.size))
-                                .toInt()
-                                .coerceIn(0, nights.lastIndex)
+                            val index = barIndexAt(offset.x, size.width.toFloat(), nights.lastIndex)
                             selected = index
                             nights.getOrNull(index)?.date?.let { day -> onOpenDay?.invoke(day) }
+                        },
+                    )
+                }
+                .pointerInput(nights) {
+                    // Same scrub as the other charts: drag across a month.
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            selected = barIndexAt(offset.x, size.width.toFloat(), nights.lastIndex)
+                        },
+                        onDrag = { change, _ ->
+                            selected = barIndexAt(change.position.x, size.width.toFloat(), nights.lastIndex)
                         },
                     )
                 },
@@ -121,7 +141,6 @@ fun SleepStagesChart(
             val baselineY = plotHeight.toPx()
             val slot = size.width / nights.size
             val barWidth = (slot * if (nights.size > 16) 0.6f else 0.7f).coerceAtMost(22.dp.toPx())
-            val totals = nights.map { it.summary.asleepMinutes }
             val maximum = totals.maxOrNull()?.coerceAtLeast(1) ?: 1
             val crown = (barWidth / 2f).coerceAtMost(6.dp.toPx())
 
@@ -132,15 +151,15 @@ fun SleepStagesChart(
                 1.dp.toPx(),
             )
 
-            nights.forEachIndexed { index, night ->
+            nights.forEachIndexed { index, _ ->
                 val centerX = slot * (index + 0.5f)
                 val left = centerX - barWidth / 2f
                 val isSelected = index == selected
                 var cursorY = baselineY
                 val scale = (baselineY - 6.dp.toPx()) / maximum
 
-                bandsOf(night.summary).forEach { band ->
-                    val height = band.minutes * scale
+                bandsPerNight.getOrElse(index) { emptyList() }.forEach { band ->
+                    val height = band.minutes * scale * grow.value
                     if (height <= 0f) return@forEach
                     val top = cursorY - height
                     val color = colors[band.kind] ?: lightColor

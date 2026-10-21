@@ -77,13 +77,15 @@ fun MetricDetailScreen(
     onRangeChange: (TrendRange) -> Unit,
     onOpenDay: (LocalDate) -> Unit,
 ) {
-    val points = when (kind) {
-        MetricKind.STEPS -> data.stepPoints()
-        MetricKind.DISTANCE -> data.distancePoints()
-        MetricKind.SLEEP -> data.sleepPoints()
-        MetricKind.HEART -> data.heartPoints()
+    val points = remember(kind, data) {
+        when (kind) {
+            MetricKind.STEPS -> data.stepPoints()
+            MetricKind.DISTANCE -> data.distancePoints()
+            MetricKind.SLEEP -> data.sleepPoints()
+            MetricKind.HEART -> data.heartPoints()
+        }
     }
-    val stats = TrendStats.of(points)
+    val stats = remember(points) { TrendStats.of(points) }
     val todayValue = when (kind) {
         MetricKind.STEPS -> data.stepsToday
         MetricKind.DISTANCE -> data.distanceTodayMeters
@@ -132,9 +134,12 @@ fun MetricDetailScreen(
                             SleepTrendChart(data.sleepTrend, onOpenDay = onOpenDay)
                             SleepStagesChart(data.sleepTrend, onOpenDay = onOpenDay)
                         }
-                        MetricKind.HEART -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay)
-                            HeartRateDistribution(data.heartRateTrend.map { it.beatsPerMinute })
+                        MetricKind.HEART -> {
+                            val readings = remember(data.heartRateTrend) { data.heartRateTrend.map { it.beatsPerMinute } }
+                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                HeartRateSparkline(data.heartRateTrend, onOpenDay = onOpenDay)
+                                HeartRateDistribution(readings)
+                            }
                         }
                     }
                     if (kind != MetricKind.HEART) {
@@ -219,7 +224,7 @@ private fun StatGrid(
     data: DashboardData,
     stepGoal: Int,
 ) {
-    val steps = data.stepsTrend.map { it.steps }
+    val steps = remember(data.stepsTrend) { data.stepsTrend.map { it.steps } }
     var expanded by remember(kind, stats.days) { mutableStateOf(false) }
     ElevatedCard(shape = RoundedCornerShape(26.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
