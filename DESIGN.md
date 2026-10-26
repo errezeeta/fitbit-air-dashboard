@@ -176,6 +176,9 @@ Five radii, no more: 8 (chips, small labels), 14 (rows, icon box), 20 (tiles, vi
   sparkline. A vital the device does not record simply is not drawn.
 - **Section label** — uppercase label-sm in onSurfaceVariant. It names a group; it is not
   a button and does not need an icon.
+- **Chart** — one Canvas, bars with a single vertical gradient of the same colour and a
+  selection band at 10% that *glides* between columns. The band and the gradient are the
+  only decoration allowed on a plot: no glows, no multi-colour gradients, no drop shadows.
 - **App bar** — brand mark drawn in a Canvas (the launcher geometry, never a stock heart),
   product name, and the current section underneath.
 

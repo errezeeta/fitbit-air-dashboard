@@ -273,7 +273,9 @@ fun FitbitAirApp(
                             onClick = { select(tab.destination) },
                             icon = { Icon(tab.icon, contentDescription = null) },
                             label = { Text(tab.label) },
-                            alwaysShowLabel = true,
+                            // Labels for the active destination only: four
+                            // permanent labels were doing the work of one.
+                            alwaysShowLabel = false,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 selectedTextColor = MaterialTheme.colorScheme.onSurface,

@@ -3,6 +3,9 @@ package com.javier.fitbitair.ui.components
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -177,6 +180,13 @@ private fun TrendBarChart(
         return
     }
     var selected by remember(entries) { mutableStateOf(entries.lastIndex) }
+    // The highlight moves like a thumb, not like a row of buttons: animating
+    // the index lets the band glide between columns while the finger scrubs.
+    val slidingSelection by animateFloatAsState(
+        targetValue = selected.toFloat(),
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow),
+        label = "bar-selection-slide",
+    )
     // Bars grow into place on first appearance; a later range or a refresh
     // keeps the plot drawn and only fades it back in, so switching ranges never
     // empties the chart.
@@ -266,6 +276,21 @@ private fun TrendBarChart(
                 .coerceAtLeast(1)
             val crown = (barWidth / 2f).coerceAtMost(6.dp.toPx())
 
+            // Drawn once, from the animated index, behind the bars.
+            run {
+                val bandCentre = slot * (slidingSelection + 0.5f)
+                drawPath(
+                    roundedCrownPath(
+                        bandCentre - barWidth / 2f - 2.dp.toPx(),
+                        plotTop,
+                        bandCentre + barWidth / 2f + 2.dp.toPx(),
+                        baselineY,
+                        crown + 2.dp.toPx(),
+                    ),
+                    highlightColor.copy(alpha = 0.10f),
+                )
+            }
+
             listOf(0f, 0.5f, 1f).forEach { fraction ->
                 val y = baselineY - fraction * usableHeight
                 drawLine(gridColor, Offset(0f, y), Offset(plotWidth, y), 1.dp.toPx())
@@ -314,18 +339,6 @@ private fun TrendBarChart(
                         isSelected -> highlightColor
                         reachedGoal -> highlightColor.copy(alpha = 0.58f)
                         else -> dormantBarColor
-                    }
-                    if (isSelected) {
-                        drawPath(
-                            roundedCrownPath(
-                                left - 2.dp.toPx(),
-                                plotTop,
-                                right + 2.dp.toPx(),
-                                baselineY,
-                                crown + 2.dp.toPx(),
-                            ),
-                            highlightColor.copy(alpha = 0.10f),
-                        )
                     }
                     drawPath(
                         roundedCrownPath(left, barTop, right, baselineY, crown),
@@ -532,6 +545,11 @@ fun HeartRateSparkline(
 ) {
     if (data.isEmpty()) return
     var selected by remember(data) { mutableStateOf(data.lastIndex) }
+    val slidingSelected by animateFloatAsState(
+        targetValue = selected.toFloat(),
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow),
+        label = "line-selection-slide",
+    )
     val selectedReading = data.getOrNull(selected) ?: data.last()
     val lineColor = MaterialTheme.colorScheme.tertiary
     val axisColor = MaterialTheme.colorScheme.outline
@@ -641,7 +659,16 @@ fun HeartRateSparkline(
         )
         drawPath(curve, lineColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
 
-        val selectedPoint = points.getOrNull(selected) ?: points.last()
+        // Interpolate the marker between neighbouring readings, so dragging
+        // slides along the line instead of hopping point to point.
+        val clamped = slidingSelected.coerceIn(0f, points.lastIndex.toFloat())
+        val lower = clamped.toInt().coerceIn(0, points.lastIndex)
+        val upper = (lower + 1).coerceAtMost(points.lastIndex)
+        val blend = (clamped - lower).coerceIn(0f, 1f)
+        val selectedPoint = Offset(
+            points[lower].x + (points[upper].x - points[lower].x) * blend,
+            points[lower].y + (points[upper].y - points[lower].y) * blend,
+        )
         drawLine(
             lineColor.copy(alpha = 0.20f),
             Offset(selectedPoint.x, inset),
