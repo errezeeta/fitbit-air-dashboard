@@ -668,7 +668,12 @@ private fun EmptyScreen(onRetry: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            // A moon said "sleep" on a screen about missing data. The mark says
+            // "this is the app, and it has nothing yet".
+            BrandMark(
+                modifier = Modifier.size(44.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+            )
             Text("Todavía no hay datos", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Conecta Google Health en Ajustes o desliza hacia abajo para volver a consultar.",

@@ -1,5 +1,11 @@
 package com.javier.fitbitair.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -63,6 +69,8 @@ import com.javier.fitbitair.domain.TrendRange
 import com.javier.fitbitair.domain.sleepEfficiencyPercent
 import com.javier.fitbitair.domain.stepProgress
 import com.javier.fitbitair.domain.trendDelta
+import com.javier.fitbitair.ui.components.BrandMark
+import com.javier.fitbitair.ui.components.rememberCountUpInt
 import com.javier.fitbitair.ui.components.DistanceBarChart
 import com.javier.fitbitair.ui.components.ExerciseSection
 import com.javier.fitbitair.ui.components.PageHeader
@@ -157,11 +165,16 @@ private fun TodayOverviewCard(
     onOpenDistance: () -> Unit,
 ) {
     val progress = stepProgress(data.stepsToday, stepGoal)
-    val animatedProgress by androidx.compose.animation.core.animateFloatAsState(
+    // A dial settles: tween reads as choreography, a spring reads as weight.
+    val animatedProgress by animateFloatAsState(
         targetValue = progress,
-        animationSpec = androidx.compose.animation.core.tween(650, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessLow),
         label = "today-step-progress",
     )
+    val animatedSteps by rememberCountUpInt(data.stepsToday)
+    val animatedSleep by rememberCountUpInt(data.sleep.asleepMinutes)
+    val animatedHeart by rememberCountUpInt(data.restingHeartRate)
+    val animatedDistance by rememberCountUpInt(data.distanceTodayMeters)
     ElevatedCard(
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -187,7 +200,7 @@ private fun TodayOverviewCard(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        formatStepsCount(data.stepsToday),
+                        formatStepsCount(animatedSteps),
                         style = MaterialTheme.typography.displaySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontWeight = FontWeight.SemiBold,
@@ -223,7 +236,7 @@ private fun TodayOverviewCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 TodayMetricTile(
                     label = "SUEÑO",
-                    value = data.sleep.asleepMinutes.takeIf { it > 0 }?.let(::formatDurationValue) ?: "—",
+                    value = if (data.sleep.asleepMinutes > 0) formatDurationValue(animatedSleep) else "—",
                     note = if (data.sleep.asleepMinutes > 0) "última noche" else "sin registro",
                     icon = { Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
                     onClick = onOpenSleep,
@@ -231,7 +244,7 @@ private fun TodayOverviewCard(
                 )
                 TodayMetricTile(
                     label = "PULSO",
-                    value = data.restingHeartRate.takeIf { it > 0 }?.let { "$it lpm" } ?: "—",
+                    value = if (data.restingHeartRate > 0) "$animatedHeart lpm" else "—",
                     note = "en reposo",
                     icon = { Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
                     onClick = onOpenHeart,
@@ -239,7 +252,7 @@ private fun TodayOverviewCard(
                 )
                 TodayMetricTile(
                     label = "DISTANCIA",
-                    value = data.distanceTodayMeters.takeIf { it > 0 }?.let(::formatDistanceValue) ?: "—",
+                    value = if (data.distanceTodayMeters > 0) formatDistanceValue(animatedDistance) else "—",
                     note = "hoy",
                     icon = { Icon(Icons.Rounded.Route, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) },
                     onClick = onOpenDistance,
@@ -714,18 +727,24 @@ private fun TextButtonLabel(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun TrendEmptyState(title: String, body: String) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(112.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(3.dp))
-        Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        BrandMark(
+            modifier = Modifier.size(34.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

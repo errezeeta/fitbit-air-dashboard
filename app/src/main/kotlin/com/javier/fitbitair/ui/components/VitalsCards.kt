@@ -1,5 +1,8 @@
 package com.javier.fitbitair.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +17,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,15 +38,12 @@ import kotlin.math.roundToInt
 
 private val esLocale = Locale.forLanguageTag("es-ES")
 
-/** Latest reading plus how far it sits from the period average. */
-private fun readout(kind: VitalKind, series: VitalSeries): String {
-    val latest = series.latest?.value ?: return "—"
-    return if (kind.decimals == 0) {
-        latest.roundToInt().toString()
+private fun readout(kind: VitalKind, value: Double): String =
+    if (kind.decimals == 0) {
+        value.roundToInt().toString()
     } else {
-        String.format(esLocale, "%.${kind.decimals}f", latest)
+        String.format(esLocale, "%.${kind.decimals}f", value)
     }
-}
 
 private fun deltaNote(series: VitalSeries): String {
     val latest = series.latest?.value ?: return ""
@@ -94,6 +95,7 @@ fun VitalsSection(
 
 @Composable
 private fun VitalCard(kind: VitalKind, series: VitalSeries, modifier: Modifier = Modifier) {
+    val animatedValue by rememberCountUpFloat((series.latest?.value ?: 0.0).toFloat())
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
@@ -114,7 +116,7 @@ private fun VitalCard(kind: VitalKind, series: VitalSeries, modifier: Modifier =
             )
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    readout(kind, series),
+                    if (series.latest == null) "—" else readout(kind, animatedValue.toDouble()),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
