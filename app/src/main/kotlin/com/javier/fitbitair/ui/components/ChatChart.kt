@@ -55,7 +55,6 @@ fun ChatMiniChart(chart: AssistantChart, modifier: Modifier = Modifier) {
     val measurer = rememberTextMeasurer()
     val axisStyle = MaterialTheme.typography.labelSmall.copy(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 9.sp,
     )
     val baselineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
     val selectedPoint = chart.points.getOrNull(selected) ?: chart.points.last()

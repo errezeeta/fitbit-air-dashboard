@@ -52,6 +52,7 @@ import com.javier.fitbitair.domain.sleepPoints
 import com.javier.fitbitair.domain.stepPoints
 import com.javier.fitbitair.ui.components.DistanceBarChart
 import com.javier.fitbitair.ui.components.PageHeader
+import com.javier.fitbitair.ui.components.rememberCountUpInt
 import com.javier.fitbitair.ui.components.HeartRateDistribution
 import com.javier.fitbitair.ui.components.HeartRateSparkline
 import com.javier.fitbitair.ui.components.SleepTrendChart
@@ -183,8 +184,9 @@ private fun HeroCard(
                 )
             }
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val animatedValue by rememberCountUpInt(todayValue ?: 0)
                 Text(
-                    todayValue?.let { kind.formatValue(it) } ?: "—",
+                    todayValue?.let { kind.formatValue(animatedValue) } ?: "—",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.SemiBold,
                     color = accent,

@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -67,6 +69,10 @@ fun SleepStagesChart(
     // now runs on every animation frame.
     val bandsPerNight = remember(nights) { nights.map { bandsOf(it.summary) } }
     val totals = remember(nights) { nights.map { it.summary.asleepMinutes } }
+    val spoken = remember(nights) {
+        val average = Math.round(nights.map { it.summary.asleepMinutes }.average()).toInt()
+        "Fases de sueño, ${nights.size} noches. Media ${formatDurationValue(average)} dormidos"
+    }
     val measurer = rememberTextMeasurer()
     val deepColor = MaterialTheme.colorScheme.tertiary
     val remColor = MaterialTheme.colorScheme.primary
@@ -88,7 +94,10 @@ fun SleepStagesChart(
         SleepStageKind.RESTLESS to awakeColor,
     )
 
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = modifier.fillMaxWidth().semantics { contentDescription = spoken },
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         val current = nights.getOrNull(selected)
         Row(
             modifier = Modifier.fillMaxWidth(),

@@ -45,6 +45,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -112,7 +114,9 @@ fun StepsBarChart(
         goal = goal,
         goalLabel = goal?.let { "meta ${formatStepsCount(it)}" } ?: "",
         onOpenDay = onOpenDay,
-        modifier = modifier,
+        modifier = modifier.semantics {
+            contentDescription = spokenTrend("Gráfico de pasos", entries, ::formatStepsCount)
+        },
     )
 }
 
@@ -132,7 +136,9 @@ fun DistanceBarChart(
         highlightColor = MaterialTheme.colorScheme.secondary,
         averageLabel = averageLabel,
         onOpenDay = onOpenDay,
-        modifier = modifier,
+        modifier = modifier.semantics {
+            contentDescription = spokenTrend("Gráfico de distancia", entries, ::formatDistanceValue)
+        },
     )
 }
 
@@ -153,8 +159,27 @@ fun SleepTrendChart(
         highlightColor = MaterialTheme.colorScheme.tertiary,
         averageLabel = averageLabel,
         onOpenDay = onOpenDay,
-        modifier = modifier,
+        modifier = modifier.semantics {
+            contentDescription = spokenTrend("Gráfico de sueño", entries, ::formatDurationValue)
+        },
     )
+}
+
+
+/**
+ * What a screen reader says about a plot.
+ *
+ * Everything on these charts is drawn in a Canvas, which means it does not
+ * exist for TalkBack: without this, a blind user hears the panel title and then
+ * nothing. One sentence carries the shape of the series — count, average, best
+ * day — which is what the chart is for.
+ */
+private fun spokenTrend(name: String, points: List<TrendEntry>, format: (Int) -> String): String {
+    if (points.isEmpty()) return "$name: sin datos todavía"
+    val average = Math.round(points.map { it.value }.average()).toInt()
+    val best = points.maxByOrNull { it.value }
+    val bestDate = best?.date?.let { " el ${chartTooltipDate(it)}" } ?: ""
+    return "$name, ${points.size} días. Media ${format(average)}, máximo ${format(best?.value ?: 0)}$bestDate"
 }
 
 /** "media 12 400 pasos"-style chip fed to the chart header. */
@@ -556,6 +581,11 @@ fun HeartRateSparkline(
     val labelStyle = MaterialTheme.typography.labelSmall
     val values = remember(data) { data.map { it.beatsPerMinute.toFloat() } }
     val average = remember(values) { values.average() }
+    val spoken = remember(data) {
+        if (data.isEmpty()) "Pulso en reposo: sin lecturas"
+        else "Pulso en reposo, ${data.size} lecturas. Media ${Math.round(average)} lpm, " +
+            "última ${data.last().beatsPerMinute} lpm el ${data.last().date?.let(::chartTooltipDate) ?: "último día"}"
+    }
     val selectionSurface = MaterialTheme.colorScheme.surface
 
     AnimatedContent(
@@ -586,6 +616,7 @@ fun HeartRateSparkline(
 
     Canvas(
         modifier = modifier
+            .semantics { contentDescription = spoken }
             .fillMaxWidth()
             .height(84.dp)
             .pointerInput(data, onOpenDay) {

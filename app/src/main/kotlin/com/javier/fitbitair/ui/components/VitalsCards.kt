@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -157,7 +158,8 @@ private fun MiniTrend(values: List<Float>, color: Color, modifier: Modifier = Mo
     val min = values.minOrNull() ?: 0f
     val max = values.maxOrNull() ?: 0f
     val span = (max - min).takeIf { it > 0f } ?: 1f
-    Canvas(modifier = modifier) {
+    // The card already states the number; a bare line adds nothing to read.
+    Canvas(modifier = modifier.clearAndSetSemantics { }) {
         val stepX = size.width / (values.size - 1)
         val path = Path()
         values.forEachIndexed { index, value ->

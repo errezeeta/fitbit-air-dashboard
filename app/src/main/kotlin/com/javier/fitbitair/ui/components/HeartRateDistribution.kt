@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -38,11 +41,9 @@ fun HeartRateDistribution(
     val track = accent.copy(alpha = 0.10f)
     val labelStyle = MaterialTheme.typography.labelSmall.copy(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 9.sp,
     )
     val countStyle = MaterialTheme.typography.labelSmall.copy(
         color = accent,
-        fontSize = 9.sp,
         fontWeight = FontWeight.SemiBold,
     )
     val measurer = rememberTextMeasurer()
@@ -50,7 +51,16 @@ fun HeartRateDistribution(
     // Resolved before the Canvas: MaterialTheme cannot be read in a draw lambda.
     val axisColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
 
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val spoken = remember(readings) {
+        val total = buckets.sumOf { it.count }
+        val busiest = buckets.maxByOrNull { it.count }
+        "Reparto de $total lecturas de pulso. La franja más frecuente es ${busiest?.label ?: "—"} " +
+            "con ${busiest?.count ?: 0}"
+    }
+    Column(
+        modifier = modifier.fillMaxWidth().semantics { contentDescription = spoken },
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Text(
             "Reparto de lecturas",
             style = MaterialTheme.typography.labelLarge,
