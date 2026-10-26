@@ -116,7 +116,7 @@ fun SettingsScreen(
         }
 
         SectionLabel("TU OBJETIVO")
-        ElevatedCard(shape = RoundedCornerShape(26.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f))) {
+        ElevatedCard(shape = RoundedCornerShape(28.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f))) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(Icons.Rounded.Flag, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -180,7 +180,7 @@ private fun ConnectionCard(
             horizontalArrangement = Arrangement.spacedBy(13.dp),
         ) {
             Box(
-                Modifier.size(42.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(15.dp)),
+                Modifier.size(42.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center,
             ) { icon() }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -296,7 +296,7 @@ private fun SoftwareUpdateCard(updater: AppUpdater?, appVersionName: String) {
 
     LaunchedEffect(updater) { checkForUpdate() }
 
-    ElevatedCard(shape = RoundedCornerShape(26.dp)) {
+    ElevatedCard(shape = RoundedCornerShape(28.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(

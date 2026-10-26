@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.javier.fitbitair.data.StepGoalStore
+import com.javier.fitbitair.ui.components.BrandMark
 import com.javier.fitbitair.domain.DashboardData
 import com.javier.fitbitair.domain.DashboardDestination
 import com.javier.fitbitair.domain.DashboardState
@@ -88,6 +89,16 @@ private enum class AppTab(
     SLEEP(DashboardDestination.SLEEP, "Sueño", Icons.Rounded.Bedtime),
     ACTIVITY(DashboardDestination.ACTIVITY, "Actividad", Icons.AutoMirrored.Rounded.DirectionsWalk),
     ASSISTANT(DashboardDestination.ASSISTANT, "Asistente", Icons.Rounded.AutoAwesome),
+}
+
+/** What the app bar calls the place you are standing in. */
+private fun sectionLabel(
+    destination: DashboardDestination,
+    detail: com.javier.fitbitair.domain.MetricKind?,
+): String = when {
+    detail != null -> detail.title
+    destination == DashboardDestination.SETTINGS -> "Ajustes"
+    else -> AppTab.entries.firstOrNull { it.destination == destination }?.label ?: "Inicio"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -192,16 +203,23 @@ fun FitbitAirApp(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
                         Box(
                             modifier = Modifier.size(38.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Rounded.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            BrandMark(modifier = Modifier.size(21.dp))
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                            Text("Fitbit Air", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("SALUD PERSONAL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            // Brand up top, section underneath: the page headers
+                            // already name the section, so a static "salud
+                            // personal" repeated it and said nothing.
+                            Text("Salud diaria", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                sectionLabel(uiState.destination, detailMetric),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 },
@@ -238,15 +256,16 @@ fun FitbitAirApp(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                    // Solid, not translucent: with no blur behind it, a 0.72
+                    // surface let the scrolling content bleed through as mud.
+                    containerColor = MaterialTheme.colorScheme.surface,
                 ),
             )
         },
         bottomBar = {
             if (uiState.destination != DashboardDestination.SETTINGS) {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f),
-                    tonalElevation = 4.dp,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 ) {
                     AppTab.entries.forEach { tab ->
                         NavigationBarItem(

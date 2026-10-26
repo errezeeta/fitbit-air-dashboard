@@ -74,7 +74,6 @@ fun SleepStagesChart(
     val awakeColor = MaterialTheme.colorScheme.outline
     val labelStyle = MaterialTheme.typography.labelSmall.copy(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 10.sp,
     )
     // Resolved before the Canvas: MaterialTheme cannot be read inside a draw lambda.
     val baselineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)

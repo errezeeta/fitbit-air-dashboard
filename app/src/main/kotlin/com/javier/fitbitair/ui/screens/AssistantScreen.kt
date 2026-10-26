@@ -203,7 +203,7 @@ fun AssistantScreen(
                 modifier = Modifier.weight(1f),
                 enabled = !isBusy,
                 placeholder = { Text(if (isBusy) "Escribiendo la respuesta…" else "Escribe una pregunta…") },
-                shape = RoundedCornerShape(26.dp),
+                shape = RoundedCornerShape(28.dp),
                 maxLines = 3,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { submit(draft) { onSend(it); draft = "" } }),
@@ -546,7 +546,7 @@ private fun ElapsedBadge(startedAt: Long) {
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
 }

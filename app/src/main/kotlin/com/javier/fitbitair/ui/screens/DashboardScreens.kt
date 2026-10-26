@@ -173,7 +173,7 @@ private fun TodayOverviewCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(24.dp))
                     .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.86f))
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -198,12 +198,6 @@ private fun TodayOverviewCard(
                         "de ${formatStepsCount(stepGoal)} pasos",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
-                    )
-                    androidx.compose.material3.LinearProgressIndicator(
-                        progress = { animatedProgress },
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(7.dp).clip(CircleShape),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f),
                     )
                     TextButtonLabel("Ajustar objetivo", onEditGoal)
                 }
@@ -267,7 +261,7 @@ private fun TodayMetricTile(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f))
             .clickableScaled(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 11.dp),
@@ -350,7 +344,6 @@ fun SleepScreen(
                 )
             }
         }
-        InfoNote("La eficiencia es un cálculo propio (tiempo dormido ÷ tiempo en cama), no el Sleep Score de Fitbit.")
     }
 }
 
@@ -471,8 +464,8 @@ fun ActivityScreen(
 private fun SleepHeroCard(sleep: SleepSummary, onOpen: () -> Unit) {
     val foreground = MaterialTheme.colorScheme.onSecondaryContainer
     Card(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).clickableScaled(onClick = onOpen),
-        shape = RoundedCornerShape(30.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).clickableScaled(onClick = onOpen),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
         Column(Modifier.fillMaxWidth().padding(19.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
@@ -516,7 +509,7 @@ private fun SleepHeroCard(sleep: SleepSummary, onOpen: () -> Unit) {
 @Composable
 private fun SleepTimePoint(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier.clip(RoundedCornerShape(15.dp)).background(MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.06f)).padding(horizontal = 12.dp, vertical = 9.dp),
+        modifier = modifier.clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.06f)).padding(horizontal = 12.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.65f), fontWeight = FontWeight.SemiBold)
@@ -606,7 +599,7 @@ private fun RestingHeartDetail(
     onOpenDay: (LocalDate) -> Unit = {},
 ) {
     val current = data.restingHeartRate.takeIf { it > 0 }
-    ElevatedCard(shape = RoundedCornerShape(26.dp), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).clickableScaled(onClick = onOpenDetail)) {
+    ElevatedCard(shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).clickableScaled(onClick = onOpenDetail)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column {
@@ -662,7 +655,7 @@ private fun TrendPanel(
     onOpenDetail: (() -> Unit)? = null,
     chart: @Composable () -> Unit,
 ) {
-    ElevatedCard(shape = RoundedCornerShape(26.dp)) {
+    ElevatedCard(shape = RoundedCornerShape(28.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
@@ -725,7 +718,7 @@ private fun TrendEmptyState(title: String, body: String) {
         modifier = Modifier
             .fillMaxWidth()
             .height(112.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f))
             .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.Center,
@@ -734,11 +727,6 @@ private fun TrendEmptyState(title: String, body: String) {
         Spacer(Modifier.height(3.dp))
         Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-}
-
-@Composable
-private fun InfoNote(text: String) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
 }
 
 private fun todayLabel(): String = LocalDate.now()

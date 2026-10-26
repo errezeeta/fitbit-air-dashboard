@@ -112,7 +112,7 @@ fun MetricDetailScreen(
 
         RangeChips(range, onRangeChange)
 
-        ElevatedCard(shape = RoundedCornerShape(26.dp)) {
+        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     if (range == TrendRange.WEEK) "Últimos 7 días" else "Últimos 30 días",
@@ -226,7 +226,7 @@ private fun StatGrid(
 ) {
     val steps = remember(data.stepsTrend) { data.stepsTrend.map { it.steps } }
     var expanded by remember(kind, stats.days) { mutableStateOf(false) }
-    ElevatedCard(shape = RoundedCornerShape(26.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    ElevatedCard(shape = RoundedCornerShape(28.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text("Resumen del periodo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -311,7 +311,7 @@ private fun RecentDays(kind: MetricKind, points: List<SeriesPoint>, onOpenDay: (
     val recent = points.asReversed()
     var showAll by remember(kind, points.size) { mutableStateOf(false) }
     if (recent.isEmpty()) return
-    ElevatedCard(shape = RoundedCornerShape(26.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    ElevatedCard(shape = RoundedCornerShape(28.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
@@ -366,7 +366,7 @@ private fun MetricEmptyState(metric: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 14.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f))
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),

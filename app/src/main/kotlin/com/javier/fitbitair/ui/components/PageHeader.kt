@@ -44,7 +44,7 @@ fun PageHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(17.dp)).background(iconSurface),
+            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(20.dp)).background(iconSurface),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))

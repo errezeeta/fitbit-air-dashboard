@@ -199,7 +199,6 @@ private fun TrendBarChart(
     val dormantBarColor = highlightColor.copy(alpha = 0.30f)
     val axisLabelStyle = MaterialTheme.typography.labelSmall.copy(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 10.sp,
     )
     // Measured once per dataset. Measuring inside the draw lambda ran a text
     // layout per bar per frame while the bars were growing — the single most
@@ -499,7 +498,7 @@ fun SleepStageLegend(stages: List<SleepStage>) {
                 Box(
                     Modifier
                         .size(8.dp)
-                        .clip(RoundedCornerShape(3.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(stageColor(stage.kind)),
                 )
                 Text(
@@ -536,7 +535,7 @@ fun HeartRateSparkline(
     val selectedReading = data.getOrNull(selected) ?: data.last()
     val lineColor = MaterialTheme.colorScheme.tertiary
     val axisColor = MaterialTheme.colorScheme.outline
-    val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)
+    val labelStyle = MaterialTheme.typography.labelSmall
     val values = remember(data) { data.map { it.beatsPerMinute.toFloat() } }
     val average = remember(values) { values.average() }
     val selectionSurface = MaterialTheme.colorScheme.surface
