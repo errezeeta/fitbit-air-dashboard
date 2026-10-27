@@ -33,7 +33,7 @@
   header { padding: 28px 0 8px; display: flex; align-items: center; gap: 10px; }
   .mark { width: 38px; height: 38px; border-radius: 14px; background: #0e3b33; display: grid; place-items: center; flex: none; }
   .brand { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
-  .brand small { display: block; font-weight: 500; font-size: 11px; letter-spacing: 0.07em; color: var(--muted); text-transform: uppercase; }
+  .brand small { display: block; font-weight: 500; font-size: 12px; letter-spacing: 0.07em; color: var(--muted); text-transform: uppercase; }
   h1 { font-size: clamp(30px, 8vw, 44px); line-height: 1.08; letter-spacing: -0.03em; margin: 28px 0 12px; }
   h1 em { font-style: normal; color: var(--mint); }
   .lede { font-size: 17px; color: var(--muted); margin: 0 0 26px; }
@@ -41,8 +41,8 @@
   .bullets li { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
   .bullets strong { display: block; font-size: 15px; margin-bottom: 2px; }
   .bullets span { color: var(--muted); font-size: 14px; }
-  h2 { font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin: 40px 0 14px; }
-  .cards { display: grid; gap: 10px; grid-template-columns: repeat(2, 1fr); }
+  h2 { font-size: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin: 40px 0 14px; }
+  .cards { display: grid; gap: 10px; grid-template-columns: 1fr; }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px; }
   .card b { display: block; font-size: 14px; margin-bottom: 4px; }
   .card span { color: var(--muted); font-size: 13px; }
@@ -77,7 +77,8 @@
   details summary::-webkit-details-marker { display: none; }
   details p { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
   footer { margin-top: 40px; color: var(--muted); font-size: 12px; line-height: 1.6; }
-  @media (min-width: 560px) { .cards { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 460px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 700px) { .cards { grid-template-columns: repeat(4, 1fr); } }
 </style>
 </head>
 <body>
@@ -94,6 +95,8 @@
 
   <h1>Your health data, <em>readable</em> and yours.</h1>
   <p class="lede">An Android app that reads Health Connect, imports the history you already have, and shows you charts you can actually read. No account, no cloud, no AI coach.</p>
+
+  <p style="margin:0 0 26px"><a class="btn" href="#beta" style="display:inline-block;text-decoration:none">Join the beta list</a></p>
 
   <ul class="bullets">
     <li><strong>Nothing leaves your phone.</strong><span>No signup, no server, no analytics. Your data stays in your pocket.</span></li>
@@ -135,7 +138,7 @@
     </div>
   </div>
 
-  <h2>Get the beta</h2>
+  <h2 id="beta">Get the beta</h2>
   <p class="lede" style="font-size:15px;margin-bottom:12px">One field for the email. I'll write once, when there is something you can install.</p>
 
   <div class="ok" id="ok" role="status">You're on the list. I'll email you once — when there's something you can install. No newsletter, no drip campaign.</div>
