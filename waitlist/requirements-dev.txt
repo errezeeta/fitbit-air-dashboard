@@ -1,0 +1,3 @@
+# Test-only dependency: Starlette's TestClient needs httpx2 on current releases.
+# The service itself does not import it, so the image never installs this file.
+httpx2>=2.0.0,<3.0.0
