@@ -176,3 +176,68 @@ Google no trae lo que hace falta, es mejor saberlo antes que después.
 3. ¿El producto se queda en "importar y ver", o incluye comparación con la nube de Google
    (que exigiría OAuth y servidor)?
 4. ¿Castellano e inglés desde el día uno, o solo inglés?
+
+---
+
+# Barrido amplio (segunda pasada): qué se paga de verdad en Play
+
+**Método:** no búsquedas genéricas, sino el **Top Paid por categoría** de Play (US/en,
+60 apps analizadas, 56 con ≥10k instalaciones) + un barrido en español (ES y MX) de oficios
+y aficiones. La pregunta no era "¿qué app falta?" sino **"¿dónde hay alguien pagando y
+sobreviviendo?"**.
+
+## El patrón de lo que sobrevive pagando
+
+De las 56 apps de pago con ≥10k instalaciones, el patrón es constante:
+
+| Tipo | Ejemplos | Precio | Instalaciones |
+|---|---|---|---|
+| Herramienta de un oficio con cálculo normativo | QuickBend: Conduit Bending (electricistas) | 6,99 $ | 50.000+ |
+| Referencia técnica que se usa en el trabajo | Knots 3D, RadarScope (meteorología) | 5,99–9,99 $ | 1M+ / 100.000+ |
+| Diagnóstico profesional | AlfaOBD, OBD Fusion | 5,99–49 $ | 100.000+ |
+| Preparación de examen oficial | HamStudy, Prepware FAA | 3,99–4,99 $ | 50.000+ |
+| Gestión técnica de un negocio pequeño | Site Audit Pro | 12,90 $ | 100.000+ |
+
+**La fórmula:** un solo trabajo, hecho *correcto*, para gente cuyos errores cuestan dinero,
+con una frase de búsqueda que los encuentra. Ninguna de esas apps es bonita. Todas están
+vivas y cobran una vez.
+
+## El único vertical en español que pasó el filtro
+
+Barrido ES+MX (8 oficios, 84 apps relevantes):
+
+| Vertical | Demanda (reseñas) | Pago probado | Incumbente débil |
+|---|---|---|---|
+| **Construcción / obra** | ~21.000 | **Cálculo Civil PRO: 14,99 €, 10.000+, 2.968 reseñas, 4,14★** | sí, en trabajos concretos |
+| Electricidad | ~90.000 | ninguno de pago vivo | no (líder gratis 5M+, 4,7★) |
+| Nudos | ~35.000 | Knots 3D: 6,99 €, 1M+, 4,9★ | no (imposible de batir) |
+| Pesca / caza / setas | 300k / 3k / 41k | ninguno | no (redes y contenido) |
+
+Dentro de construcción hay trabajos con incumbente flojo, que es donde está el hueco:
+
+- **Escaleras:** `RedX Escaleras -Calculadora 3D`, 100.000+, 1.076 reseñas, **3,38★**.
+  `Escaleras-X Lite`, 1M+, 4,4★ pero *Lite* (funciones cortadas).
+- **Presupuestos y mediciones:** plantillas gratis con 3.800 reseñas, ninguna app de pago.
+- **Cubiertas / tejados:** `Roofing framing calculator`, 100.000+, 4,71★, gratis, en inglés.
+
+## Veredicto de la segunda pasada
+
+**Sí hay un producto con demanda medible y pago probado en español: una calculadora de obra
+de un solo trabajo, a 9,99–14,99 € pago único.** El mercado no es enorme, pero es 10–100
+veces el del export de salud, y el precedente de pago es del mismo tipo de usuario
+(profesional que pierde dinero si calcula mal).
+
+Aritmética: 15 ventas/mes a 9,99 € son 150 €/mes. En un vertical con ~21.000 reseñas y un
+competidor de pago con 10.000 instalaciones, 15 ventas al mes es un objetivo realista, no
+una fantasía — pero exige entrar por un trabajo concreto donde el incumbente esté mal
+valorado, no con otra calculadora general.
+
+Riesgo principal: **el gratis**. La mayoría de apps de obra son gratis con anuncios. La
+defensa no es el precio, es hacer *un* cálculo bien hecho, sin anuncios, sin cuenta, offline
+y con el resultado exportable a PDF para el cliente.
+
+## Siguiente medición pendiente
+
+Elegir el trabajo concreto (escaleras de obra y presupuesto en PDF son los dos candidatos) y
+comprobar tres cosas antes de construir: cuántas reseñas hablan de ese cálculo exacto,
+si el incumbente flojo sigue vivo, y qué precio tiene el generalista de pago.
