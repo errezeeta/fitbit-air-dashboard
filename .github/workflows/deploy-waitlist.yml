@@ -1,0 +1,77 @@
+name: Deploy waitlist service
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: Type DEPLOY to create or update the waitlist Cloud Run service
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install waitlist dependencies
+        run: python -m pip install -r waitlist/requirements.txt
+      - name: Run waitlist tests
+        run: python -m unittest discover -s waitlist/tests -t . -v
+
+  deploy:
+    needs: test
+    if: ${{ inputs.confirm_deploy == 'DEPLOY' }}
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Ensure the waitlist secret exists
+        run: |
+          gcloud secrets describe fitbit-air-waitlist >/dev/null 2>&1 || \
+            printf '{"version":1,"signups":{},"events":{}}' \
+              | gcloud secrets create fitbit-air-waitlist --data-file=- --replication-policy=automatic
+
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          source: waitlist
+          service: health-waitlist
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          region: ${{ vars.GCP_REGION }}
+          env_vars_update_strategy: merge
+          env_vars: |-
+            WAITLIST_STORE=secretmanager
+            GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}
+            WAITLIST_SECRET_NAME=fitbit-air-waitlist
+            WAITLIST_STATS_TOKEN=${{ secrets.WAITLIST_STATS_TOKEN }}
+          flags: >-
+            --allow-unauthenticated
+            --min 0
+            --max 1
+            --memory 256Mi
+            --cpu 1
+            --concurrency 20
+            --timeout 30s
+            --service-account=${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+
+      - name: Show the public URL
+        run: echo "Waitlist live at ${{ steps.deploy.outputs.url }}"

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your health data, readable and yours</title>
+<meta name="description" content="An Android app that reads Health Connect, imports the history you already have, and shows you charts you can actually read. No account, no cloud, no AI coach.">
+<meta name="color-scheme" content="dark light">
+<style>
+  :root {
+    --bg: #07121a;
+    --surface: #0d1f29;
+    --surface-2: #122833;
+    --line: #1e3a47;
+    --text: #e6f0ee;
+    --muted: #a8bdc4;
+    --mint: #4fe3c1;
+    --mint-ink: #04231c;
+    --sand: #d3b173;
+    --radius: 20px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { width: min(720px, 100%); margin: 0 auto; padding: 0 20px 72px; }
+  header { padding: 28px 0 8px; display: flex; align-items: center; gap: 10px; }
+  .mark { width: 38px; height: 38px; border-radius: 14px; background: #0e3b33; display: grid; place-items: center; flex: none; }
+  .brand { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+  .brand small { display: block; font-weight: 500; font-size: 11px; letter-spacing: 0.07em; color: var(--muted); text-transform: uppercase; }
+  h1 { font-size: clamp(30px, 8vw, 44px); line-height: 1.08; letter-spacing: -0.03em; margin: 28px 0 12px; }
+  h1 em { font-style: normal; color: var(--mint); }
+  .lede { font-size: 17px; color: var(--muted); margin: 0 0 26px; }
+  .bullets { list-style: none; margin: 0 0 30px; padding: 0; display: grid; gap: 12px; }
+  .bullets li { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .bullets strong { display: block; font-size: 15px; margin-bottom: 2px; }
+  .bullets span { color: var(--muted); font-size: 14px; }
+  h2 { font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin: 40px 0 14px; }
+  .cards { display: grid; gap: 10px; grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px; }
+  .card b { display: block; font-size: 14px; margin-bottom: 4px; }
+  .card span { color: var(--muted); font-size: 13px; }
+  .prices { display: grid; gap: 10px; }
+  .price { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+  .price.pro { border-color: var(--mint); background: #0e3b33; }
+  .price .name { font-weight: 600; font-size: 15px; }
+  .price .amount { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  .price .note { color: var(--muted); font-size: 13px; width: 100%; }
+  .price.pro .note { color: #b9f7e7; }
+  button, .btn {
+    font: inherit; font-weight: 600; border: 0; border-radius: 14px; padding: 12px 18px;
+    cursor: pointer; background: var(--mint); color: var(--mint-ink); min-height: 48px;
+  }
+  .btn.ghost { background: transparent; color: var(--mint); border: 1px solid var(--line); }
+  form { background: var(--surface-2); border: 1px solid var(--line); border-radius: 24px; padding: 18px; display: grid; gap: 14px; margin-top: 8px; }
+  label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
+  input[type=email], select {
+    width: 100%; font: inherit; font-size: 16px; padding: 12px 14px; min-height: 48px;
+    border-radius: 14px; border: 1px solid var(--line); background: #07121a; color: var(--text);
+  }
+  input[type=email]:focus, select:focus, button:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+  fieldset { border: 0; margin: 0; padding: 0; }
+  .radio { display: flex; align-items: center; gap: 10px; padding: 10px 0; min-height: 44px; }
+  .radio input { width: 20px; height: 20px; accent-color: var(--mint); }
+  .radio span { font-size: 14px; color: var(--text); }
+  .fine { color: var(--muted); font-size: 12px; margin: 0; }
+  .ok { display: none; background: var(--mint); color: var(--mint-ink); border-radius: 16px; padding: 14px 16px; font-weight: 600; }
+  .ok.show { display: block; }
+  details { border-bottom: 1px solid var(--line); padding: 14px 0; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 15px; list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details p { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+  @media (min-width: 560px) { .cards { grid-template-columns: repeat(4, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mark" aria-hidden="true">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9.2" stroke="#4fe3c1" stroke-width="1.7"/>
+        <path d="M3.8 12h5l2-4.2 3.6 8.4 2-4.2h4" stroke="#4fe3c1" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="brand">Local health<small>Android · early access</small></div>
+  </header>
+
+  <h1>Your health data, <em>readable</em> and yours.</h1>
+  <p class="lede">An Android app that reads Health Connect, imports the history you already have, and shows you charts you can actually read. No account, no cloud, no AI coach.</p>
+
+  <ul class="bullets">
+    <li><strong>Nothing leaves your phone.</strong><span>No signup, no server, no analytics. Your data stays in your pocket.</span></li>
+    <li><strong>Your old history comes with you.</strong><span>Import your Fitbit or Google export and pick up where the old app left off.</span></li>
+    <li><strong>Yours to take.</strong><span>Export everything to CSV or JSON any time. A health app you can't leave is a hostage situation, not a product.</span></li>
+  </ul>
+
+  <h2>What it does</h2>
+  <div class="cards">
+    <div class="card"><b>Pinned metrics</b><span>The three numbers you actually check, at the top.</span></div>
+    <div class="card"><b>Readable sleep</b><span>Stages as a proper chart, not a paragraph.</span></div>
+    <div class="card"><b>Your own baseline</b><span>30 or 90 days behind every number, so a bad night is obvious.</span></div>
+    <div class="card"><b>Import &amp; export</b><span>Old history in, everything out, whenever you want.</span></div>
+  </div>
+
+  <h2>Pricing, up front</h2>
+  <div class="prices">
+    <div class="price">
+      <div>
+        <div class="name">Free</div>
+        <div class="note">Last 30 days and basic CSV export. No account needed.</div>
+      </div>
+      <div class="amount">0 €</div>
+    </div>
+    <div class="price pro">
+      <div>
+        <div class="name">Pro</div>
+        <div class="note">Full history, baseline trends, PDF yearly report and archive.</div>
+      </div>
+      <div class="amount">24,99 €/yr</div>
+      <button type="button" id="reserve">Reserve Pro for 24,99 €/yr</button>
+    </div>
+    <div class="price">
+      <div>
+        <div class="name">Lifetime</div>
+        <div class="note">Same as Pro, paid once. Some people are done with subscriptions.</div>
+      </div>
+      <div class="amount">49,99 €</div>
+    </div>
+  </div>
+
+  <h2>Get the beta</h2>
+  <p class="lede" style="font-size:15px;margin-bottom:12px">One field for the email. I'll write once, when there is something you can install.</p>
+
+  <div class="ok" id="ok" role="status">You're on the list. I'll email you once — when there's something you can install. No newsletter, no drip campaign.</div>
+
+  <form id="signup" novalidate>
+    <div>
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com">
+    </div>
+    <div>
+      <label for="device">What did you use before?</label>
+      <select id="device" name="device">
+        <option value="fitbit">Fitbit</option>
+        <option value="samsung">Samsung Health</option>
+        <option value="garmin">Garmin</option>
+        <option value="apple">Apple Health</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <fieldset>
+      <label>Would you pay for this?</label>
+      <div class="radio"><input type="radio" id="i1" name="intent" value="reserve_pro"><span><label for="i1" style="margin:0;color:inherit;font-size:14px">Reserve Pro at 24,99 €/year</label></span></div>
+      <div class="radio"><input type="radio" id="i2" name="intent" value="free_only" checked><span><label for="i2" style="margin:0;color:inherit;font-size:14px">Free version is enough for me</label></span></div>
+      <div class="radio"><input type="radio" id="i3" name="intent" value="no_pay"><span><label for="i3" style="margin:0;color:inherit;font-size:14px">I wouldn't pay for this</label></span></div>
+    </fieldset>
+    <button type="submit" id="submit">Join the beta list</button>
+    <p class="fine" id="error" hidden style="color:#ffb4ab">That email doesn't look right. Mind checking it?</p>
+    <p class="fine">I'm the developer. No affiliate links, nothing sold, no data leaves this page except the email you type.</p>
+  </form>
+
+  <h2>Questions</h2>
+  <details><summary>Does it upload my data?</summary><p>No. It reads Health Connect on the device and stores everything locally. There is no account and no server holding your health data.</p></details>
+  <details><summary>Does it work with my Fitbit Air, Charge or Pixel Watch?</summary><p>If the device writes to Health Connect, yes. The confirmed list grows as people try it; the beta is where that gets settled.</p></details>
+  <details><summary>Can I import years of history?</summary><p>Yes — from the Google or Fitbit data export. You point the app at the file.</p></details>
+  <details><summary>What happens if I stop paying?</summary><p>You keep your data and can export everything. Always.</p></details>
+  <details><summary>Is this medical advice?</summary><p>No. It's your data, presented properly.</p></details>
+
+  <footer>
+    Built by an Android user who wanted the charts back. This page stores the email you submit and nothing else; the counter is mine, not Google's.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var source = (params.get('src') || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40);
+    var form = document.getElementById('signup');
+    var ok = document.getElementById('ok');
+    var error = document.getElementById('error');
+    var submit = document.getElementById('submit');
+
+    function track(type) {
+      fetch('/api/events', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: type, source: source }),
+        keepalive: true
+      }).catch(function () {});
+    }
+
+    track('page_view');
+
+    document.getElementById('reserve').addEventListener('click', function () {
+      // The click is the only vote that counts: it is measured before the form.
+      track('clicked_reserve');
+      document.getElementById('i1').checked = true;
+      document.getElementById('email').focus({ preventScroll: true });
+      document.getElementById('signup').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      error.hidden = true;
+      var email = document.getElementById('email').value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(email)) {
+        error.hidden = false;
+        return;
+      }
+      var intent = form.querySelector('input[name=intent]:checked');
+      submit.disabled = true;
+      fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          source: source,
+          previous_device: document.getElementById('device').value,
+          intent: intent ? intent.value : ''
+        })
+      }).then(function (response) {
+        if (!response.ok) throw new Error('failed');
+        form.hidden = true;
+        ok.classList.add('show');
+        ok.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }).catch(function () {
+        submit.disabled = false;
+        error.hidden = false;
+        error.textContent = 'Something went wrong. Try again in a moment.';
+      });
+    });
+  })();
+</script>
+</body>
+</html>
