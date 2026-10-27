@@ -241,3 +241,71 @@ y con el resultado exportable a PDF para el cliente.
 Elegir el trabajo concreto (escaleras de obra y presupuesto en PDF son los dos candidatos) y
 comprobar tres cosas antes de construir: cuántas reseñas hablan de ese cálculo exacto,
 si el incumbente flojo sigue vivo, y qué precio tiene el generalista de pago.
+
+---
+
+# Barrido de oficios y aficiones (tercera pasada, ES+EN, 20 nichos)
+
+Mismo método, campo abierto: 20 nichos con cálculo cerrado, buscados en inglés (US) y
+español (ES), midiendo reseñas totales, apps con ≥10k instalaciones, **apps de pago que
+sobreviven** y la nota del incumbente más flojo.
+
+| Nicho | Reseñas | Apps ≥10k | Pago sólido (≥10k, de pago) | Incumbente más flojo |
+|---|---|---|---|---|
+| fitosanitarios | 45,003 | 10 | 1 | Samsung Smart Calibration 10000+ 2.94★ |
+| tuberias | 17,244 | 9 | 2 | Pipe Diameter Calculator 100000+ 3.86★ |
+| bitrate video | 890,972 | 8 | 0 | Calculator 1000000000+ 3.94★ |
+| sonido/aforo | 333,425 | 11 | 0 | SPL CAM - Sonómetro con video 10000+ 3.5 |
+| impresion 3d | 100,634 | 10 | 0 | 3D Print Cost Calculator 10000+ 3.95★ |
+| costura | 56,380 | 10 | 0 | Sewing Patterns Lite 10000+ 3.5★ |
+| dosis enfermeria | 34,282 | 9 | 0 | Dosage Calculations Made Easy 10000+ 2★ |
+| azulejos | 33,288 | 8 | 0 | Floor & Wall Tiles Calculator 100000+ 4. |
+| buceo | 23,604 | 8 | 0 | DiveProMe Scuba Diving Planner 10000+ 4. |
+| punto/calceta | 21,733 | 6 | 0 | Easy Knitty Row Counter | Knit 100000+ 3 |
+| lista de corte madera | 9,893 | 3 | 0 | Cutting Optimization -Al,Glass 50000+ 4. |
+| solar | 8,898 | 6 | 0 | Solar Spotter & PV Calculator 500000+ 3. |
+| dosis veterinaria | 6,702 | 11 | 0 | Vetcalculators 10000+ 2.8★ |
+| escalada | 3,970 | 6 | 0 | Model Scale Calculator 100000+ 3.4★ |
+| cafe/barismo | 3,524 | 4 | 0 | Brewing Calculator 50000+ 3.5★ |
+| escandallo hosteleria | 2,566 | 10 | 0 | Food Cost Calculator 50000+ 3★ |
+| colmenas | 1,006 | 2 | 0 | HiveTracks 10000+ 4.77★ |
+| peso y balance | 473 | 3 | 0 | Aircraft Weight and Balance 10000+ 3.2★ |
+| conductos clima | 453 | 5 | 0 | Allday HVAC Calc 10000+ null★ |
+| soldadura | 417 | 6 | 0 | voestalpine Welding Calculator 50000+ 3. |
+
+## Lo que dice el barrido
+
+- **Sólo dos familias tienen apps de pago con ≥10k instalaciones: fontanería/tuberías y
+  calibración agrícola.** En el resto (costura, buceo, solar, café, escandallo, colmenas,
+  soldadura, peso y balance, bitrate, sonido) no hay un solo pago sólido.
+- Los nichos con pocas reseñas (<1.000: colmenas, peso y balance, conductos, soldadura) no
+  pasan el umbral de mercado: son grupos de amigos.
+- La familia con más señales es **tuberías / montaje de tubo**, y no por una app sino por
+  un conjunto: `Pipe Fitter Calculator` (5,99 $, 10.000+, 4,39★), `Pipe Support Calculator`
+  (4,99 $, 5.000+, 3,83★), `Mitered Pipe` (4,99 $, 5.000+, 4,44★), `QuickBend: Conduit
+  Bending` (6,99 $, 50.000+, 4,23★). Varios pagos conviviendo = disposición a pagar
+  demostrada y **calidad no resuelta**.
+
+## La queja que es el producto
+
+Reseñas del pagado más instalado (`Pipe Fitter Calculator`, 4,39★):
+
+- "Union steamfitter here: **the multipliers on this app are flat out wrong**. For a 45
+  offset you want to multiply the rise/run by 1.4142"
+- "after the last update I can't choose a pipe diameter when needing fitting measurements"
+- "Anybody else getting a reoccurring fee after downloading this app?"
+
+O sea: el cálculo está mal, las actualizaciones rompen funciones y hay cobros que el usuario
+no esperaba. **La corrección es el producto**, igual que en el export de salud la queja era
+"no funciona".
+
+## Dos formas de entrar, y el dilema
+
+| | Inglés, global | Español + métrico (ES/LatAm) |
+|---|---|---|
+| Pago probado | sí (5–7 $, varios vivos) | **no** (nadie cobra aún) |
+| Competencia | 6+ apps de pago, líder gratis 4,84★ | gratis y flojas (3,2–3,6★) |
+| Ventaja posible | hacer el cálculo bien | unidades métricas (DN) y idioma |
+
+A 7,99 € hacen falta **19 ventas/mes**. En inglés hay pagos demostrados pero también
+competencia decente; en español no hay competencia de pago pero tampoco prueba de que paguen.
